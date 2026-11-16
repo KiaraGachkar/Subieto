@@ -1,0 +1,26 @@
+{
+    "name": "subieto/v33-seo-speed",
+    "description": "PHP 8.1+ Bilingual Subtitle Aggregator with Hardened Security, Geo-Targeted Ads, Programmatic SEO & Partitioned Static Cache",
+    "type": "project",
+    "require": {
+        "php": "^8.1",
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-mbstring": "*"
+    },
+    "suggest": {
+        "ext-iconv": "Required for converting legacy CP1256/Windows-1256 Persian subtitles to UTF-8",
+        "ext-apcu": "High performance in-memory caching and rate limiting",
+        "ext-zip": "Required for automatic in-memory UTF-8 & time-shift processing inside .zip archives"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}
