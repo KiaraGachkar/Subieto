@@ -45,29 +45,37 @@ final class ProxyDownloadService
 
         $cleanFileName = $this->sanitizeFileName($desiredFileName);
 
-        $mode = (string) $this->settings->get('site.download_mode', 'stream');
-
-        if ($mode === 'redirect') {
-            $this->recordDownload($cleanFileName, $meta);
-            header('Referrer-Policy: no-referrer');
-            header('Location: ' . $resolvedUrl, true, 302);
-            exit;
+        $browserHeaders = [
+            'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language' => 'en-US,en;q=0.9',
+        ];
+        $sourceHost = (string) parse_url($resolvedUrl, PHP_URL_HOST);
+        if ($sourceHost !== '') {
+            $browserHeaders['Referer'] = 'https://' . $sourceHost . '/';
         }
 
-        $response = $this->fetchPinnedHttps($resolvedUrl, 20, $pinnedIp);
+        $response = $this->fetchPinnedHttps($resolvedUrl, 20, $pinnedIp, $browserHeaders);
 
         if ($response['status'] >= 300 && $response['status'] < 400 && !empty($response['headers']['location'])) {
             $redirTarget = HttpClient::absolutize($resolvedUrl, (string) $response['headers']['location']);
             $redirIp = null;
             if ($this->isAllowedDomain($redirTarget, $redirIp)) {
-                $response = $this->fetchPinnedHttps($redirTarget, 20, $redirIp);
+                $redirHost = (string) parse_url($redirTarget, PHP_URL_HOST);
+                $redirHeaders = $browserHeaders;
+                if ($redirHost !== '') {
+                    $redirHeaders['Referer'] = 'https://' . $redirHost . '/';
+                }
+                $response = $this->fetchPinnedHttps($redirTarget, 20, $redirIp, $redirHeaders);
             }
         }
 
         if ($response['status'] < 200 || $response['status'] >= 300 || $response['body'] === '') {
-            header('Referrer-Policy: no-referrer');
-            header('Location: ' . $resolvedUrl, true, 302);
-            exit;
+            error_log('[proxy-download] Fetch failed for ' . $sourceHost . ' (status ' . $response['status'] . ')');
+            http_response_code(502);
+            header('Content-Type: text/plain; charset=utf-8');
+            echo 'Could not fetch the subtitle from the source. Please try a different release or language.';
+            return;
         }
 
         $content = $response['body'];
@@ -301,14 +309,18 @@ final class ProxyDownloadService
     /**
      * @return array{status: int, body: string, headers: array<string, string>}
      */
-    private function fetchPinnedHttps(string $url, int $timeout, ?string $pinnedIp = null): array
+    /**
+     * @param array<string, string> $headers
+     * @return array{status: int, body: string, headers: array<string, string>}
+     */
+    private function fetchPinnedHttps(string $url, int $timeout, ?string $pinnedIp = null, array $headers = []): array
     {
         $host  = (string) parse_url($url, PHP_URL_HOST);
         $ip    = ($pinnedIp !== null && $pinnedIp !== '') ? $pinnedIp : ($host !== '' ? gethostbyname($host) : '');
         $extra = ($ip !== '' && $ip !== $host && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE))
             ? [CURLOPT_RESOLVE => [$host . ':443:' . $ip]]
             : [];
-        return $this->http->request('GET', $url, [], null, $timeout, false, $extra);
+        return $this->http->request('GET', $url, $headers, null, $timeout, false, $extra);
     }
 
     private function normalizeToUtf8(string $binary): string

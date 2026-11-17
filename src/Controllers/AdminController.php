@@ -152,7 +152,6 @@ final class AdminController extends BaseController
             $this->redirect('/admin');
         }
 
-        $downloadMode  = ($_POST['download_mode'] ?? 'stream') === 'redirect' ? 'redirect' : 'stream';
         $cacheTtl      = min(604800, max(0, (int) ($_POST['cache_ttl'] ?? 21600)));
         $adsEnabled    = isset($_POST['ads_enabled']) ? '1' : '0';
         $adblockNotice = isset($_POST['adblock_notice']) ? '1' : '0';
@@ -185,7 +184,6 @@ final class AdminController extends BaseController
             'site.title'                       => trim((string) ($_POST['site_title'] ?? 'Subieto')),
             'site.base_url'                    => $rawBaseUrl,
             'site.description'                 => trim((string) ($_POST['site_description'] ?? '')),
-            'site.download_mode'               => $downloadMode,
             'site.default_theme'               => (($_POST['default_theme'] ?? 'light') === 'dark' ? 'dark' : 'light'),
             'site.cache_ttl'                   => (string) $cacheTtl,
             'apis.tmdb_api_key'                => trim((string) ($_POST['tmdb_api_key'] ?? '')),

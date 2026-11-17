@@ -54,19 +54,37 @@ $adSlotsMeta = [
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&family=Nunito:wght@400;500;600;700;800&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400..500,0..1,0" rel="stylesheet">
     <style>
         html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-        body { font-family: 'Nunito', system-ui, sans-serif; background-color: #faf7f2; color: #2b302d; }
-        .font-display { font-family: 'Outfit', 'Nunito', sans-serif; letter-spacing: -0.015em; }
+        body { font-family: 'Vazirmatn', system-ui, sans-serif; background-color: #faf7f2; color: #2b302d; }
+        .font-display { font-family: 'Vazirmatn', 'Outfit', sans-serif; letter-spacing: -0.015em; }
+        html:not([lang="fa"]) body { font-family: 'Nunito', system-ui, sans-serif; }
+        html:not([lang="fa"]) .font-display { font-family: 'Outfit', 'Nunito', sans-serif; }
+
+        .admin-compact .p-6 { padding: 1rem !important; }
+        .admin-compact .p-5 { padding: .875rem !important; }
+        .admin-compact .p-4 { padding: .75rem !important; }
+        .admin-compact .p-3\.5, .admin-compact .p-3 { padding: .625rem !important; }
+        .admin-compact .px-6 { padding-inline: 1rem !important; }
+        .admin-compact .px-4 { padding-inline: .75rem !important; }
+        .admin-compact .px-3\.5, .admin-compact .px-2\.5 { padding-inline: .625rem !important; }
+        .admin-compact .py-7 { padding-block: 1rem !important; }
+        .admin-compact .py-3\.5, .admin-compact .py-2\.5, .admin-compact .py-2 { padding-block: .375rem !important; }
+        .admin-compact .gap-4 { gap: .625rem !important; }
+        .admin-compact .gap-3\.5, .admin-compact .gap-3, .admin-compact .gap-2\.5 { gap: .5rem !important; }
+        .admin-compact .space-y-6 > :not([hidden]) ~ :not([hidden]),
+        .admin-compact .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: .75rem !important; }
+        .admin-compact .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: .625rem !important; }
+        .admin-compact .h-16 { height: 3.25rem !important; }
         .font-mono { font-family: 'JetBrains Mono', monospace; }
         [x-cloak] { display: none !important; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col justify-between" x-data="adminStudio()">
+<body class="admin-compact min-h-screen flex flex-col justify-between" x-data="adminStudio()">
 
     <!-- Top Light Header -->
     <header class="w-full sticky top-0 z-40 bg-[#faf7f2]/90 backdrop-blur-xl border-b border-[#efeae1]">
@@ -532,11 +550,9 @@ $adSlotsMeta = [
                     </div>
                     <div>
                         <label class="block font-bold text-[#6c655a] mb-1"><?= $t('حالت تحویل فایل', 'Delivery Engine') ?></label>
-                        <?php $mode = $config['site.download_mode'] ?? 'stream'; ?>
-                        <select name="download_mode" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5">
-                            <option value="stream" <?= $mode === 'stream' ? 'selected' : '' ?>><?= $t('پردازش در RAM (تبدیل UTF-8)', 'RAM Stream (UTF-8)') ?></option>
-                            <option value="redirect" <?= $mode === 'redirect' ? 'selected' : '' ?>><?= $t('ریدایرکت مستقیم (مصرف پهنای باند صفر)', 'Direct 302 Redirect (Zero Bandwidth)') ?></option>
-                        </select>
+                        <div class="bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5 text-xs text-[#6c655a]">
+                            <?= $t('دانلود مستقیم از طریق سرور همراه با تبدیل UTF-8', 'Always streamed directly through the server (UTF-8)') ?>
+                        </div>
                     </div>
                     <div>
                         <label class="block font-bold text-[#6c655a] mb-1"><?= $t('مدت کش (ثانیه)', 'Cache TTL (seconds)') ?></label>
