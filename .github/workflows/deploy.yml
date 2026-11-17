@@ -1,0 +1,45 @@
+name: Deploy to cPanel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: pdo, pdo_mysql, curl, json, mbstring
+          tools: composer:v2
+
+      - name: Install dependencies (production)
+        run: composer install --no-dev -o --no-interaction --prefer-dist
+
+      - name: Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.CPANEL_HOST }}
+          username: ${{ secrets.CPANEL_USER }}
+          password: ${{ secrets.CPANEL_PASSWORD }}
+          protocol: ftps            # اگر هاست FTPS ندارد: ftp
+          port: 21
+          local-dir: ./
+          server-dir: ${{ secrets.CPANEL_DIR }}   # مثلا /subieto/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            .github/**
+            README.md
+            composer.lock
+            config/database.php
+            storage/**
