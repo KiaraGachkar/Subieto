@@ -206,9 +206,6 @@ final class MovieController extends BaseController
         $jsonLd          = SeoHelper::buildMovieJsonLd($this->settings, $media, $displayedSubtitles, $canonicalUrl, $season, $locale);
 
         $hreflang = '';
-        foreach (['en' => $canonicalPath . '?lang=en', 'fa' => $canonicalPath . '?lang=fa'] as $hl => $u) {
-            $hreflang .= '<link rel="alternate" hreflang="' . $hl . '" href="' . htmlspecialchars(SeoHelper::getBaseUrl() . $u, ENT_QUOTES, 'UTF-8') . '">';
-        }
 
         $bindIp  = $this->settings->get('security.bind_ip_download', '0') === '1';
         $pageTtl = $bindIp ? 0 : min(3600, max(0, (int) $this->settings->get('site.cache_ttl', 21600)));
@@ -242,36 +239,6 @@ final class MovieController extends BaseController
         }
     }
 
-    public function preview(): void
-    {
-        header('Content-Type: application/json; charset=utf-8');
-        header('Cache-Control: no-store');
-
-        $limiter = new RateLimiter($this->db, $this->prefix);
-        if (!$limiter->allow('preview', 30, 60)) {
-            http_response_code(429);
-            header('Retry-After: 60');
-            echo json_encode(['cues' => [], 'error' => 'rate_limit']);
-            return;
-        }
-
-        $token   = (string) ($_GET['token'] ?? '');
-        $payload = $this->signer->verify($token, $this->getClientIp());
-
-        if ($payload === null || empty($payload['url'])) {
-            http_response_code(403);
-            echo json_encode(['cues' => []]);
-            return;
-        }
-
-        $shiftSeconds = isset($_GET['shift']) && is_numeric($_GET['shift']) ? (float) $_GET['shift'] : 0.0;
-        $openSub = new OpenSubtitlesProvider($this->http, $this->settings);
-        $downloader = new ProxyDownloadService($this->http, $this->settings, $openSub, $this->db, $this->prefix);
-        $cues = $downloader->extractPreview($payload['url'], $shiftSeconds);
-
-        echo json_encode(['cues' => $cues], JSON_UNESCAPED_UNICODE);
-    }
-
     public function download(): void
     {
         $limiter = new RateLimiter($this->db, $this->prefix);
@@ -298,10 +265,8 @@ final class MovieController extends BaseController
             'lang'     => $payload['lang'] ?? 'fa',
         ];
 
-        $shiftSeconds = isset($_GET['shift']) && is_numeric($_GET['shift']) ? (float) $_GET['shift'] : 0.0;
-
         $openSub = new OpenSubtitlesProvider($this->http, $this->settings);
         $downloader = new ProxyDownloadService($this->http, $this->settings, $openSub, $this->db, $this->prefix);
-        $downloader->deliver($payload['url'], $payload['file'] ?? 'subtitle.srt', $meta, $shiftSeconds);
+        $downloader->deliver($payload['url'], $payload['file'] ?? 'subtitle.srt', $meta);
     }
 }

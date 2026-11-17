@@ -12,30 +12,6 @@ $hueFromId = static fn(string $id): int => (abs(crc32($id)) % 360);
 ?>
 <div class="col" style="padding-top:32px;padding-bottom:72px">
 
-    <div class="searchzone" style="margin-top:0">
-        <form action="/search" method="GET" role="search">
-            <div class="spill">
-                <div class="spill__in">
-                    <svg class="sp-ico" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-                        <circle cx="9.6" cy="9.6" r="7" stroke="currentColor" stroke-width="1.7"/>
-                        <path d="M14.8 14.8l4.6 4.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                    </svg>
-                    <input
-                        class="sp-input"
-                        type="text"
-                        name="q"
-                        value="<?= View::e($query) ?>"
-                        placeholder="<?= $isFa ? 'نام فیلم، سریال یا کد IMDb...' : 'Search a film, series, or IMDb ID...' ?>"
-                    >
-                    <button type="submit" class="sp-go">
-                        <span><?= $isFa ? 'جستجو' : 'Search' ?></span>
-                        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.6 8h10M8.8 4.2L12.6 8l-3.8 3.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </button>
-                </div>
-            </div>
-        </form>
-    </div>
-
     <?php if ($searchTopAd !== ''): ?>
         <div style="margin-top:26px">
             <div data-ad-slot="search_top_banner" class="ad-card">

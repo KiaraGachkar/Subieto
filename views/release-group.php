@@ -27,9 +27,9 @@ $hueFromId = static fn(string $id): int => (abs(crc32($id)) % 360);
         </h1>
         <p style="margin:10px 0 0;color:var(--soft);font-size:14px;max-width:62ch"><?= View::e($groupDesc) ?></p>
 
-        <div class="pills" style="margin-top:18px">
+        <div class="frow" role="group" aria-label="<?= $isFa ? 'نسخه‌ها' : 'Release groups' ?>" style="margin-top:18px">
             <?php foreach ($groupCatalog as $gKey => $gInfo): ?>
-                <a href="/subtitles/release/<?= View::e($gKey) ?>" class="pill" aria-pressed="<?= $gKey === $groupSlug ? 'true' : 'false' ?>">
+                <a href="/subtitles/release/<?= View::e($gKey) ?>" class="ftab" aria-pressed="<?= $gKey === $groupSlug ? 'true' : 'false' ?>">
                     <span class="mono"><?= View::e($gInfo['name']) ?></span>
                 </a>
             <?php endforeach; ?>

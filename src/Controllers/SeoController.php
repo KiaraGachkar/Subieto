@@ -36,7 +36,7 @@ final class SeoController extends BaseController
     public function sitemapIndex(): void
     {
         header('Content-Type: application/xml; charset=utf-8');
-        StaticPageCache::emitCacheHeaders(3600);
+        StaticPageCache::emitCacheHeaders(300);
         $base = SeoHelper::getBaseUrl();
 
         // Sync trending items into indexed_media
@@ -66,7 +66,7 @@ final class SeoController extends BaseController
     public function sitemapPages(): void
     {
         header('Content-Type: application/xml; charset=utf-8');
-        StaticPageCache::emitCacheHeaders(3600);
+        StaticPageCache::emitCacheHeaders(300);
         $base    = SeoHelper::getBaseUrl();
         $lastmod = $this->latestMediaDate();
 
@@ -85,7 +85,7 @@ final class SeoController extends BaseController
         $offset  = ($pageNum - 1) * self::URLS_PER_SITEMAP;
 
         header('Content-Type: application/xml; charset=utf-8');
-        StaticPageCache::emitCacheHeaders(3600);
+        StaticPageCache::emitCacheHeaders(300);
         $base = SeoHelper::getBaseUrl();
 
         $allUrls = $this->buildMediaUrls($base);

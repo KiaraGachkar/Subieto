@@ -195,14 +195,6 @@ final class SeoHelper
                             'text'  => "{$count} فایل زیرنویس تأییدشده برای {$subjectTitle} موجود است. نسخه‌ای را انتخاب کنید که با فایل ویدیویی خود مطابقت دارد (مانند BluRay یا WEB-DL) و روی دانلود کلیک کنید تا فایل SRT با کدگذاری UTF-8 فوراً دریافت شود.",
                         ],
                     ],
-                    [
-                        '@type'          => 'Question',
-                        'name'           => "چگونه مشکلات هماهنگی زمانی زیرنویس را برطرف کنیم؟",
-                        'acceptedAnswer' => [
-                            '@type' => 'Answer',
-                            'text'  => "روی ابزار تنظیم زمان بالای فهرست زیرنویس کلیک کنید تا زمان را در گام‌های ±0.5 ثانیهای جابهجا کنید، یا در VLC Media Player کلیدهای G و H را فشار دهید.",
-                        ],
-                    ],
                 ],
             ];
         } else {
@@ -215,14 +207,6 @@ final class SeoHelper
                         'acceptedAnswer' => [
                             '@type' => 'Answer',
                             'text'  => "There are {$count} verified subtitle files available for {$subjectTitle}. Select the release matching your video file (such as BluRay or WEB-DL) and click Download for an instant UTF-8 SRT file.",
-                        ],
-                    ],
-                    [
-                        '@type'          => 'Question',
-                        'name'           => "How can I fix subtitle timing sync issues?",
-                        'acceptedAnswer' => [
-                            '@type' => 'Answer',
-                            'text'  => "Click Sync Tools above the subtitle list to shift timestamps by ±0.5s increments before downloading, or press G and H in VLC Media Player.",
                         ],
                     ],
                 ],

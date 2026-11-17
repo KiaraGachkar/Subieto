@@ -56,13 +56,10 @@ $adSlotsMeta = [
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400..500,0..1,0" rel="stylesheet">
-    <?php if ($isFa): ?>
-        <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
-    <?php endif; ?>
     <style>
         html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-        body { font-family: <?= $isFa ? "'Vazirmatn', " : "" ?>'Nunito', system-ui, sans-serif; background-color: #faf7f2; color: #2b302d; }
-        .font-display { font-family: <?= $isFa ? "'Vazirmatn', " : "" ?>'Outfit', 'Nunito', sans-serif; letter-spacing: <?= $isFa ? '0' : '-0.015em' ?>; }
+        body { font-family: 'Nunito', system-ui, sans-serif; background-color: #faf7f2; color: #2b302d; }
+        .font-display { font-family: 'Outfit', 'Nunito', sans-serif; letter-spacing: -0.015em; }
         .font-mono { font-family: 'JetBrains Mono', monospace; }
         [x-cloak] { display: none !important; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -85,12 +82,6 @@ $adSlotsMeta = [
             </div>
 
             <div class="flex items-center gap-2">
-                <!-- Admin Language Switcher (Default FA, Switchable to EN) -->
-                <a href="/admin?lang=<?= $isFa ? 'en' : 'fa' ?>" class="px-3 py-1.5 rounded-full bg-white border border-[#efeae1] hover:border-[#2e6f40] text-xs font-bold text-[#2b302d] flex items-center gap-1 transition-colors">
-                    <span class="material-symbols-outlined text-[15px] text-[#2e6f40]">translate</span>
-                    <span><?= $isFa ? 'EN' : 'فا' ?></span>
-                </a>
-
                 <a href="/" target="_blank" class="px-3.5 py-1.5 rounded-full bg-white border border-[#efeae1] hover:border-[#2e6f40]/40 text-xs font-bold text-[#2b302d] flex items-center gap-1 transition-colors">
                     <span><?= $t('مشاهده سایت', 'Open Site') ?></span>
                     <span class="material-symbols-outlined text-[14px]">open_in_new</span>
@@ -539,7 +530,7 @@ $adSlotsMeta = [
                         <label class="block font-bold text-[#6c655a] mb-1"><?= $t('حالت تحویل فایل', 'Delivery Engine') ?></label>
                         <?php $mode = $config['site.download_mode'] ?? 'stream'; ?>
                         <select name="download_mode" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5">
-                            <option value="stream" <?= $mode === 'stream' ? 'selected' : '' ?>><?= $t('پردازش در RAM (تبدیل UTF-8 و تغییر زمان)', 'RAM Stream (UTF-8 + Time Sync)') ?></option>
+                            <option value="stream" <?= $mode === 'stream' ? 'selected' : '' ?>><?= $t('پردازش در RAM (تبدیل UTF-8)', 'RAM Stream (UTF-8)') ?></option>
                             <option value="redirect" <?= $mode === 'redirect' ? 'selected' : '' ?>><?= $t('ریدایرکت مستقیم (مصرف پهنای باند صفر)', 'Direct 302 Redirect (Zero Bandwidth)') ?></option>
                         </select>
                     </div>

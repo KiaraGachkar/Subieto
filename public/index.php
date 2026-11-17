@@ -166,7 +166,6 @@ $router->get('/subtitles/{imdbId}/season-{season}', 'App\Controllers\MovieContro
 $router->get('/subtitles/{imdbId}/{slug}/{langSlug}', 'App\Controllers\MovieController@showLanguage');
 $router->get('/subtitles/{imdbId}/{slug}', 'App\Controllers\MovieController@show');
 $router->get('/subtitles/{imdbId}', 'App\Controllers\MovieController@show');
-$router->get('/api/preview', 'App\Controllers\MovieController@preview');
 $router->get('/download', 'App\Controllers\MovieController@download');
 $router->get('/sitemap.xml', 'App\Controllers\SeoController@sitemapIndex');
 $router->get('/sitemap-pages.xml', 'App\Controllers\SeoController@sitemapPages');

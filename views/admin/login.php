@@ -19,13 +19,10 @@ $isFa = (($adminLocale ?? 'fa') === 'fa');
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400..500,0..1,0" rel="stylesheet">
-    <?php if ($isFa): ?>
-        <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
-    <?php endif; ?>
     <style>
         html { -webkit-font-smoothing: antialiased; }
-        body { font-family: <?= $isFa ? "'Vazirmatn', " : "" ?>'Nunito', system-ui, sans-serif; background-color: #faf7f2; color: #2b302d; }
-        .font-display { font-family: <?= $isFa ? "'Vazirmatn', " : "" ?>'Outfit', 'Nunito', sans-serif; }
+        body { font-family: 'Nunito', system-ui, sans-serif; background-color: #faf7f2; color: #2b302d; }
+        .font-display { font-family: 'Outfit', 'Nunito', sans-serif; }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">

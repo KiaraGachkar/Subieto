@@ -15,65 +15,12 @@ final class LocaleService
 
     public static function resolvePublicLocale(): string
     {
-        if (isset($_GET['lang']) && in_array($_GET['lang'], ['en', 'fa'], true)) {
-            $chosen = (string) $_GET['lang'];
-            if (!headers_sent()) {
-                setcookie('subieto_lang', $chosen, [
-                    'expires'  => time() + 86400 * 30,
-                    'path'     => '/',
-                    'secure'   => ClientIp::isHttps(),
-                    'httponly' => false,
-                    'samesite' => 'Lax',
-                ]);
-            }
-            return $chosen;
-        }
-
-        if (isset($_COOKIE['subieto_lang']) && in_array($_COOKIE['subieto_lang'], ['en', 'fa'], true)) {
-            return (string) $_COOKIE['subieto_lang'];
-        }
-
-        if (self::prefersPersianLanguage()) {
-            return 'fa';
-        }
-
         return 'en';
     }
 
     public static function resolveAdminLocale(): string
     {
-        if (isset($_GET['lang']) && in_array($_GET['lang'], ['en', 'fa'], true)) {
-            $chosen = (string) $_GET['lang'];
-            if (!headers_sent()) {
-                setcookie('subieto_admin_lang', $chosen, [
-                    'expires'  => time() + 86400 * 30,
-                    'path'     => '/',
-                    'secure'   => ClientIp::isHttps(),
-                    'httponly' => false,
-                    'samesite' => 'Lax',
-                ]);
-            }
-            return $chosen;
-        }
-
-        if (isset($_COOKIE['subieto_admin_lang']) && in_array($_COOKIE['subieto_admin_lang'], ['en', 'fa'], true)) {
-            return (string) $_COOKIE['subieto_admin_lang'];
-        }
-
-        return 'fa';
-    }
-
-    /**
-     * Checks browser Accept-Language OR Iran IP for UI localization (keeps UI Persian even when VPN is active).
-     */
-    public static function prefersPersianLanguage(): bool
-    {
-        $acceptLang = strtolower(trim((string) ($_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '')));
-        if (str_starts_with($acceptLang, 'fa') || str_contains($acceptLang, 'fa-ir')) {
-            return true;
-        }
-
-        return self::isIranVisitor();
+        return 'en';
     }
 
     /**

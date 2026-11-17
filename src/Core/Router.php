@@ -48,6 +48,6 @@ final class Router
         }
 
         http_response_code(404);
-        echo '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><title>404 - صفحه یافت نشد</title></head><body style="background:#0f172a;color:#f8fafc;font-family:sans-serif;text-align:center;padding:80px"><h1>۴۰۴ - صفحه مورد نظر یافت نشد</h1><a href="/" style="color:#38bdf8">بازگشت به صفحه اصلی</a></body></html>';
+        echo '<!DOCTYPE html><html lang="en" dir="ltr"><head><meta charset="UTF-8"><title>404 - Page not found</title></head><body style="background:#0f172a;color:#f8fafc;font-family:sans-serif;text-align:center;padding:80px"><h1>404 - Page not found</h1><a href="/" style="color:#38bdf8">Back to home</a></body></html>';
     }
 }

@@ -29,116 +29,11 @@ final class ProxyDownloadService
     ) {
     }
 
-    /**
-     * @return array<int, array{time: string, text: string}>
-     */
-    public function extractPreview(string $rawUrl, float $shiftSeconds = 0.0): array
-    {
-        $shiftSeconds = max(-300.0, min(300.0, $shiftSeconds));
-
-        $resolvedUrl = $this->resolveTargetUrl($rawUrl);
-        $pinnedIp = null;
-        if ($resolvedUrl === null || !$this->isAllowedDomain($resolvedUrl, $pinnedIp)) {
-            return [];
-        }
-
-        $response = $this->fetchPinnedHttps($resolvedUrl, 15, $pinnedIp);
-        if ($response['status'] >= 300 && $response['status'] < 400 && !empty($response['headers']['location'])) {
-            $redirTarget = HttpClient::absolutize($resolvedUrl, (string) $response['headers']['location']);
-            $redirIp = null;
-            if ($this->isAllowedDomain($redirTarget, $redirIp)) {
-                $response = $this->fetchPinnedHttps($redirTarget, 15, $redirIp);
-            }
-        }
-
-        if ($response['status'] < 200 || $response['status'] >= 300 || $response['body'] === '') {
-            return [];
-        }
-
-        $content = $response['body'];
-        $subText = '';
-
-        if (str_starts_with($content, "PK\x03\x04") && class_exists(ZipArchive::class)) {
-            $tmpFile = tempnam(sys_get_temp_dir(), 'shprev_');
-            if ($tmpFile !== false) {
-                try {
-                    file_put_contents($tmpFile, $content);
-                    $zip = new ZipArchive();
-                    if ($zip->open($tmpFile) === true) {
-                        if ($this->zipWithinLimits($zip)) {
-                            for ($i = 0; $i < $zip->numFiles; $i++) {
-                                $name = $zip->getNameIndex($i);
-                                if (is_string($name) && preg_match('/\.(srt|vtt)$/i', $name)) {
-                                    $entry = $zip->getFromIndex($i);
-                                    if (is_string($entry) && $entry !== '') {
-                                        $subText = $entry;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        $zip->close();
-                    }
-                } catch (Throwable) {
-                    $subText = '';
-                } finally {
-                    @unlink($tmpFile);
-                }
-            }
-        } else {
-            $subText = $content;
-        }
-
-        if ($subText === '') {
-            return [];
-        }
-
-        $subText = $this->normalizeToUtf8($subText);
-        if (str_starts_with($subText, "\xEF\xBB\xBF")) {
-            $subText = substr($subText, 3);
-        }
-
-        if (abs($shiftSeconds) >= 0.05) {
-            $subText = $this->shiftSubtitleTimestamps($subText, $shiftSeconds);
-        }
-
-        $normalized = str_replace(["\r\n", "\r"], "\n", $subText);
-        $blocks = preg_split('/\n{2,}/', trim($normalized)) ?: [];
-        $cues = [];
-
-        foreach ($blocks as $block) {
-            $lines = array_values(array_filter(array_map('trim', explode("\n", $block)), static fn($l) => $l !== ''));
-            if (count($lines) < 2) {
-                continue;
-            }
-            $timeIdx = null;
-            foreach ($lines as $idx => $line) {
-                if (str_contains($line, '-->')) {
-                    $timeIdx = $idx;
-                    break;
-                }
-            }
-            if ($timeIdx === null || !isset($lines[$timeIdx + 1])) {
-                continue;
-            }
-            $textLines = array_slice($lines, $timeIdx + 1);
-            $cleanText = strip_tags(implode("\n", $textLines));
-            $cues[] = [
-                'time' => $lines[$timeIdx],
-                'text' => $cleanText,
-            ];
-            if (count($cues) >= 6) {
-                break;
-            }
-        }
-
-        return $cues;
-    }
 
     /**
      * @param array{imdbId?: string, title?: string, provider?: string, lang?: string} $meta
      */
-    public function deliver(string $rawUrl, string $desiredFileName, array $meta = [], float $shiftSeconds = 0.0): void
+    public function deliver(string $rawUrl, string $desiredFileName, array $meta = []): void
     {
         $resolvedUrl = $this->resolveTargetUrl($rawUrl);
         $pinnedIp = null;
@@ -148,19 +43,11 @@ final class ProxyDownloadService
             return;
         }
 
-        $shiftSeconds = max(-300.0, min(300.0, $shiftSeconds));
-
         $cleanFileName = $this->sanitizeFileName($desiredFileName);
-        if (abs($shiftSeconds) >= 0.05) {
-            $sign = $shiftSeconds > 0 ? '+' : '';
-            $ext  = pathinfo($cleanFileName, PATHINFO_EXTENSION);
-            $base = pathinfo($cleanFileName, PATHINFO_FILENAME);
-            $cleanFileName = $base . '_sync_' . $sign . rtrim(rtrim(number_format($shiftSeconds, 1, '.', ''), '0'), '.') . 's' . ($ext !== '' ? '.' . $ext : '');
-        }
 
         $mode = (string) $this->settings->get('site.download_mode', 'stream');
 
-        if ($mode === 'redirect' && abs($shiftSeconds) < 0.05) {
+        if ($mode === 'redirect') {
             $this->recordDownload($cleanFileName, $meta);
             header('Referrer-Policy: no-referrer');
             header('Location: ' . $resolvedUrl, true, 302);
@@ -193,7 +80,7 @@ final class ProxyDownloadService
             if (!str_ends_with(strtolower($cleanFileName), '.zip')) {
                 $cleanFileName .= '.zip';
             }
-            $processedZip = $this->processZipArchive($content, $shiftSeconds);
+            $processedZip = $this->processZipArchive($content);
             if ($processedZip === null) {
                 error_log('[proxy-download] Rejected oversized ZIP archive: ' . $cleanFileName);
                 http_response_code(422);
@@ -204,9 +91,6 @@ final class ProxyDownloadService
             header('Content-Type: application/zip');
         } else {
             $content = $this->normalizeToUtf8($content);
-            if (abs($shiftSeconds) >= 0.05) {
-                $content = $this->shiftSubtitleTimestamps($content, $shiftSeconds);
-            }
             header('Content-Type: application/x-subrip; charset=utf-8');
         }
 
@@ -245,7 +129,7 @@ final class ProxyDownloadService
         return true;
     }
 
-    private function processZipArchive(string $zipBinary, float $shiftSeconds): ?string
+    private function processZipArchive(string $zipBinary): ?string
     {
         if (!class_exists(ZipArchive::class)) {
             return $zipBinary;
@@ -291,9 +175,6 @@ final class ProxyDownloadService
                 }
 
                 $processed = $this->normalizeToUtf8($rawEntry);
-                if (abs($shiftSeconds) >= 0.05 && in_array($ext, ['srt', 'vtt'], true)) {
-                    $processed = $this->shiftSubtitleTimestamps($processed, $shiftSeconds);
-                }
 
                 if ($processed !== $rawEntry) {
                     $zip->addFromString($entryName, $processed);
@@ -316,42 +197,6 @@ final class ProxyDownloadService
         } finally {
             @unlink($tmpFile);
         }
-    }
-
-    private function shiftSubtitleTimestamps(string $content, float $shiftSeconds): string
-    {
-        $shiftMs = (int) round($shiftSeconds * 1000);
-
-        return preg_replace_callback(
-            '/(?:(\d{1,3}):)?(\d{1,3}):(\d{2})([,.])(\d{3})\s*-->\s*(?:(\d{1,3}):)?(\d{1,3}):(\d{2})([,.])(\d{3})/',
-            static function (array $m) use ($shiftMs): string {
-                $hasStartHours = ($m[1] ?? '') !== '';
-                $hasEndHours   = ($m[6] ?? '') !== '';
-                $startMs = (((int) ($m[1] ?? 0) * 3600) + ((int) $m[2] * 60) + (int) $m[3]) * 1000 + (int) $m[5];
-                $endMs   = (((int) ($m[6] ?? 0) * 3600) + ((int) $m[7] * 60) + (int) $m[8]) * 1000 + (int) $m[10];
-
-                $newStart = max(0, $startMs + $shiftMs);
-                $newEnd   = max(0, $endMs + $shiftMs);
-
-                $formatTime = static function (int $totalMs, string $sep, bool $withHours): string {
-                    $hours = intdiv($totalMs, 3600000);
-                    $rem   = $totalMs % 3600000;
-                    $mins  = intdiv($rem, 60000);
-                    $rem   = $rem % 60000;
-                    $secs  = intdiv($rem, 1000);
-                    $ms    = $rem % 1000;
-                    if ($withHours) {
-                        return sprintf('%02d:%02d:%02d%s%03d', $hours, $mins, $secs, $sep, $ms);
-                    }
-                    return sprintf('%02d:%02d%s%03d', ($hours * 60) + $mins, $secs, $sep, $ms);
-                };
-
-                return $formatTime($newStart, $m[4], $hasStartHours)
-                    . ' --> '
-                    . $formatTime($newEnd, $m[9], $hasEndHours);
-            },
-            $content
-        ) ?? $content;
     }
 
     /**

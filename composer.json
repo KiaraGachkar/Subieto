@@ -13,7 +13,7 @@
     "suggest": {
         "ext-iconv": "Required for converting legacy CP1256/Windows-1256 Persian subtitles to UTF-8",
         "ext-apcu": "High performance in-memory caching and rate limiting",
-        "ext-zip": "Required for automatic in-memory UTF-8 & time-shift processing inside .zip archives"
+        "ext-zip": "Required for automatic in-memory UTF-8 conversion inside .zip archives"
     },
     "autoload": {
         "psr-4": {

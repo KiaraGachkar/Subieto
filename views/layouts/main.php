@@ -45,15 +45,9 @@ if ($adblockMessage === '') {
 $reqUri   = (string) ($_SERVER['REQUEST_URI'] ?? '/');
 $urlParts = parse_url($reqUri);
 $baseP    = $urlParts['path'] ?? '/';
-$qParams  = [];
-if (!empty($urlParts['query'])) {
-    parse_str($urlParts['query'], $qParams);
-}
-$qParams['lang'] = $isFa ? 'en' : 'fa';
-$switchLangUrl   = $baseP . '?' . http_build_query($qParams);
 ?>
 <!DOCTYPE html>
-<html lang="<?= $lang ?>" dir="<?= $dir ?>" data-theme="<?= $defaultTheme === 'dark' ? 'dark' : 'light' ?>">
+<html lang="en" dir="ltr" data-theme="<?= $defaultTheme === 'dark' ? 'dark' : 'light' ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -98,11 +92,8 @@ $switchLangUrl   = $baseP . '?' . http_build_query($qParams);
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
-    <?php if ($isFa): ?>
-        <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
-    <?php endif; ?>
-    <link rel="stylesheet" href="/assets/subieto.css?v=28">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/subieto.css?v=46">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
     <?= $headScripts ?>
 </head>
@@ -114,19 +105,12 @@ $switchLangUrl   = $baseP . '?' . http_build_query($qParams);
     <?php endif; ?>
 
     <header class="bar">
-        <?php $isHomePage = (($baseP ?? '/') === '/'); ?>
         <div class="col bar__in">
             <a href="/" class="mark" aria-label="<?= View::e($siteTitle) ?>">
-                <svg viewBox="0 0 26 26" fill="none" aria-hidden="true">
-                    <rect x="1.2" y="4.4" width="23.6" height="17.2" rx="5" stroke="currentColor" stroke-width="1.7"/>
-                    <path d="M7 14.6h6.6M7 17.6h10.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                    <path d="M10.8 9.8a2.5 2.5 0 1 0 0 2.6M17.8 9.8a2.5 2.5 0 1 0 0 2.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                </svg>
                 <b><?= View::e($siteTitle) ?></b>
             </a>
 
-            <?php if (!$isHomePage): ?>
-                <div class="bar__search" x-data="liveSearch(false)">
+                <div class="bar__search" x-data="liveSearch(true)">
                     <form action="/search" method="GET" role="search" @submit="saveHistory(query)">
                         <div class="bar__pill">
                             <svg viewBox="0 0 22 22" fill="none" aria-hidden="true">
@@ -143,14 +127,18 @@ $switchLangUrl   = $baseP . '?' . http_build_query($qParams);
                                 @keydown="onKeydown($event)"
                                 @click.away="open = false"
                                 autocomplete="off"
-                                placeholder="<?= $isFa ? 'جستجوی سریع...' : 'Quick search...' ?>"
+                                aria-label="<?= $isFa ? 'جستجوی فیلم، سریال یا کد IMDb' : 'Search films, series, or IMDb ID' ?>"
+                                placeholder="<?= $isFa ? 'جستجوی فیلم، سریال یا کد IMDb...' : 'Films, series, or IMDb ID…' ?>"
                             >
                             <button type="button" class="sp-clear" x-show="query.length > 0" x-cloak @click="clearQuery()" aria-label="Clear">✕</button>
                             <span class="sp-kbd" x-show="query.length === 0">/</span>
+                            <button type="submit" class="sp-go-mini" aria-label="<?= $isFa ? 'جستجو' : 'Search' ?>">
+                                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.6 8h10M8.8 4.2L12.6 8l-3.8 3.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </button>
                         </div>
                     </form>
 
-                    <div class="ac" x-show="open && (results.length > 0 || recent.length > 0)" x-cloak style="min-width:320px">
+                    <div class="ac" x-show="open && (results.length > 0 || recent.length > 0)" x-cloak style="min-width:min(320px,calc(100vw - 32px))">
                         <template x-if="query.trim().length < 2 && recent.length > 0">
                             <div>
                                 <div class="ac__sec">
@@ -184,12 +172,8 @@ $switchLangUrl   = $baseP . '?' . http_build_query($qParams);
                         </template>
                     </div>
                 </div>
-            <?php endif; ?>
 
             <div class="bar__r">
-                <a href="<?= View::e($switchLangUrl) ?>" class="ghost" style="font-weight:600;font-size:12.5px" title="<?= $isFa ? 'Switch to English' : 'تغییر زبان به فارسی' ?>">
-                    <?= $isFa ? 'EN' : 'فا' ?>
-                </a>
                 <button type="button" class="ghost" @click="toggleTheme()" aria-label="Toggle theme">
                     <svg x-show="!isDark" width="17" height="17" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3.1" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.2v1.5M8 13.3v1.5M14.8 8h-1.5M2.7 8H1.2M12.8 3.2l-1 1M4.2 11.8l-1 1M12.8 12.8l-1-1M4.2 4.2l-1-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
                     <svg x-show="isDark" x-cloak width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M13.2 9.4A5.7 5.7 0 0 1 6.6 2.8a5.8 5.8 0 1 0 6.6 6.6Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
