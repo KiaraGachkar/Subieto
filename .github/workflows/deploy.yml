@@ -10,8 +10,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # مسیر پروژه روی سرور (نسبت به home اکانت cPanel) — در صورت نیاز عوض کنید
-  REMOTE_DIR: "~/subieto/"
+  # ↓↓↓ این سه مورد را مستقیم همین‌جا ویرایش کنید ↓↓↓
+  SSH_HOST: "YOUR_SERVER_IP_OR_DOMAIN"      # مثلا 185.10.20.30
+  SSH_USER: "YOUR_CPANEL_USERNAME"          # نام کاربری cPanel
+  REMOTE_DIR: "~/subieto/"                  # مسیر پروژه روی سرور
   SSH_PORT: "22"
 
 jobs:
@@ -30,20 +32,19 @@ jobs:
       - name: Install dependencies (production)
         run: composer install --no-dev -o --no-interaction --prefer-dist
 
-      - name: Prepare SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
+      - name: Install sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
 
       - name: Upload with rsync
+        env:
+          SSHPASS: ${{ secrets.FTP_PASSWORD }}   # رمز cPanel (همان Secret که قبلا ساختید)
         run: |
           rsync -az --human-readable --stats \
-            -e "ssh -i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new" \
+            -e "sshpass -e ssh -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new" \
             --exclude='.git*' \
             --exclude='.github/' \
             --exclude='README.md' \
             --exclude='composer.lock' \
             --exclude='config/database.php' \
             --exclude='storage/' \
-            ./ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${REMOTE_DIR}"
+            ./ "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}"
