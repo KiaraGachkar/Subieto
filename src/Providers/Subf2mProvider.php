@@ -154,7 +154,10 @@ final class Subf2mProvider implements SubtitleProviderInterface
         libxml_clear_errors();
 
         $xpath = new DOMXPath($dom);
-        $rows = $xpath->query('//ul[contains(@class,"scrolllist")]//li');
+        $rows = $xpath->query('//li[contains(@class,"item")]');
+        if (!$rows || $rows->length === 0) {
+            $rows = $xpath->query('//ul[contains(@class,"scrolllist")]//li');
+        }
         if (!$rows || $rows->length === 0) {
             return [];
         }
@@ -171,7 +174,9 @@ final class Subf2mProvider implements SubtitleProviderInterface
                 continue;
             }
 
-            $lang = LanguageMap::resolve($lm[1]);
+            $langNode = $xpath->query('.//span[contains(@class,"language")]', $li);
+            $langText = ($langNode && $langNode->length > 0) ? trim((string) $langNode->item(0)?->textContent) : '';
+            $lang = LanguageMap::resolve($langText !== '' ? $langText : $lm[1]);
 
             $releaseNodes = $xpath->query('.//ul[contains(@class,"scrolllist")]//li | .//span[contains(@class,"name")]', $li);
             $releaseName = '';
