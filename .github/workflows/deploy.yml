@@ -1,4 +1,4 @@
-name: Deploy to cPanel
+name: Deploy to cPanel (SSH)
 
 on:
   push:
@@ -8,6 +8,11 @@ on:
 concurrency:
   group: deploy
   cancel-in-progress: false
+
+env:
+  # مسیر پروژه روی سرور (نسبت به home اکانت cPanel) — در صورت نیاز عوض کنید
+  REMOTE_DIR: "~/subieto/"
+  SSH_PORT: "22"
 
 jobs:
   deploy:
@@ -25,20 +30,20 @@ jobs:
       - name: Install dependencies (production)
         run: composer install --no-dev -o --no-interaction --prefer-dist
 
-      - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps            # اگر هاست FTPS ندارد: ftp
-          port: 21
-          local-dir: ./
-          exclude: |
-            **/.git*
-            **/.git*/**
-            .github/**
-            README.md
-            composer.lock
-            config/database.php
-            storage/**
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+      - name: Upload with rsync
+        run: |
+          rsync -az --human-readable --stats \
+            -e "ssh -i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new" \
+            --exclude='.git*' \
+            --exclude='.github/' \
+            --exclude='README.md' \
+            --exclude='composer.lock' \
+            --exclude='config/database.php' \
+            --exclude='storage/' \
+            ./ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${REMOTE_DIR}"
