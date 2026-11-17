@@ -675,7 +675,11 @@ $adSlotsMeta = [
                     try {
                         const res = await fetch('/admin/test-apis', {
                             method: 'POST',
-                            headers: { 'X-CSRF-Token': '<?= View::e(Session::csrfToken()) ?>' }
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-Token': '<?= View::e(Session::csrfToken()) ?>'
+                            },
+                            body: JSON.stringify({ _csrf: '<?= View::e(Session::csrfToken()) ?>' })
                         });
                         this.testData = await res.json();
                     } catch (e) {

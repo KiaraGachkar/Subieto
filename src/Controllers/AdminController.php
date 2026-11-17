@@ -309,10 +309,12 @@ final class AdminController extends BaseController
         $this->requireAdmin();
         header('Content-Type: application/json; charset=utf-8');
 
-        $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($_POST['_csrf'] ?? null);
+        $rawInput = file_get_contents('php://input');
+        $jsonInput = is_string($rawInput) ? json_decode($rawInput, true) : null;
+        $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($jsonInput['_csrf'] ?? ($_POST['_csrf'] ?? null));
         if (!Session::verifyCsrf(is_string($token) ? $token : null)) {
             http_response_code(403);
-            echo json_encode(['error' => 'csrf']);
+            echo json_encode(['error' => 'csrf', 'received' => is_string($token) ? substr($token, 0, 8) : null]);
             return;
         }
 
