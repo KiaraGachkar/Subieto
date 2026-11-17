@@ -220,6 +220,18 @@ final class SearchController extends BaseController
             }
         }
 
+        // Last-resort poster for local-DB hits that have no cached metadata (any metadata mode):
+        // try the TMDB-mode cache entry, then the deterministic IMDb-keyed poster URL.
+        foreach ($list as $item) {
+            if ($item->posterUrl !== '' || !preg_match('/^tt\d{5,10}$/', $item->imdbId)) {
+                continue;
+            }
+            $tmdbMeta = $this->cache->get("tmdb_imdb_v2_{$item->imdbId}");
+            $item->posterUrl = (is_array($tmdbMeta) && !empty($tmdbMeta['posterUrl']))
+                ? (string) $tmdbMeta['posterUrl']
+                : 'https://images.metahub.space/poster/small/' . $item->imdbId . '/img';
+        }
+
         $needle = mb_strtolower($titleQuery);
 
         usort($list, static function (MediaItem $a, MediaItem $b) use ($needle, $yearFilter): int {

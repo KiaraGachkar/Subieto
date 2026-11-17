@@ -108,6 +108,11 @@ final class HomeController extends BaseController
                     $cMeta = $this->cache->get("cinemeta_imdb_{$id}");
                     if (is_array($cMeta) && !empty($cMeta['posterUrl'])) {
                         $posterUrl = (string) $cMeta['posterUrl'];
+                    } else {
+                        $tMeta = $this->cache->get("tmdb_imdb_v2_{$id}");
+                        $posterUrl = (is_array($tMeta) && !empty($tMeta['posterUrl']))
+                            ? (string) $tMeta['posterUrl']
+                            : 'https://images.metahub.space/poster/small/' . $id . '/img';
                     }
                     $topPicks[] = new MediaItem(
                         tmdbId: 0,

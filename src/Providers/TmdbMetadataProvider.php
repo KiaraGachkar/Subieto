@@ -67,7 +67,7 @@ final class TmdbMetadataProvider
         $results = [];
         foreach ($rawRows as $row) {
             $tmdbId = (int) ($row['id'] ?? 0);
-            $imdbId = $imdbMap[$tmdbId] ?? '';
+            $imdbId = $imdbMap["{$type}:{$tmdbId}"] ?? '';
             if ($tmdbId === 0 || $imdbId === '') {
                 continue;
             }
@@ -115,7 +115,7 @@ final class TmdbMetadataProvider
             'fa' => self::BASE_URL . "/search/multi?api_key=" . urlencode($apiKey) . "&language=fa-IR&include_adult=false&query={$encodedQ}",
         ]);
 
-        $faMap = $this->indexPersianRows($responses['fa']['results'] ?? []);
+        $faMap = $this->indexPersianRows($responses['fa']['results'] ?? [], true);
         $filteredRows = [];
 
         foreach ($responses['en']['results'] ?? [] as $row) {
@@ -135,11 +135,11 @@ final class TmdbMetadataProvider
         foreach ($filteredRows as $row) {
             $tmdbId = (int) $row['id'];
             $mediaType = (string) $row['media_type'];
-            $imdbId = $imdbMap[$tmdbId] ?? '';
+            $imdbId = $imdbMap["{$mediaType}:{$tmdbId}"] ?? '';
             if ($imdbId === '') {
                 continue;
             }
-            $results[] = $this->mapRawItem($row, $mediaType, $imdbId, $faMap[$tmdbId] ?? null);
+            $results[] = $this->mapRawItem($row, $mediaType, $imdbId, $faMap["{$mediaType}:{$tmdbId}"] ?? null);
         }
 
         $ttl = (int) $this->settings->get('site.cache_ttl', 21600);
@@ -226,7 +226,7 @@ final class TmdbMetadataProvider
         $results = [];
         foreach ($rawRows as $row) {
             $id = (int) ($row['id'] ?? 0);
-            $imdbId = $imdbMap[$id] ?? '';
+            $imdbId = $imdbMap["{$type}:{$id}"] ?? '';
             if ($id === 0 || $imdbId === '') {
                 continue;
             }
@@ -380,13 +380,16 @@ final class TmdbMetadataProvider
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
      */
-    private function indexPersianRows(array $rows): array
+    private function indexPersianRows(array $rows, bool $byType = false): array
     {
+        // TMDB movie and tv ids are separate namespaces (movie 1405 != tv 1405), so
+        // mixed lists (search/multi) must be keyed by "type:id" to avoid cross-wiring.
         $map = [];
         foreach ($rows as $row) {
             $id = (int) ($row['id'] ?? 0);
             if ($id > 0) {
-                $map[$id] = $row;
+                $key = $byType ? ((string) ($row['media_type'] ?? 'movie')) . ':' . $id : $id;
+                $map[$key] = $row;
             }
         }
         return $map;
@@ -394,7 +397,7 @@ final class TmdbMetadataProvider
 
     /**
      * @param array<int, array<string, mixed>> $rows
-     * @return array<int, string>
+     * @return array<string, string> map of "type:tmdbId" => imdb id
      */
     private function resolveImdbIdsBatch(array $rows, ?string $forcedType = null): array
     {
@@ -418,7 +421,7 @@ final class TmdbMetadataProvider
             [$type, $idStr] = explode(':', (string) $compositeKey, 2);
             $cached = $cachedValues[$cacheKey] ?? null;
             if (is_string($cached) && $cached !== '') {
-                $resolved[(int) $idStr] = $cached;
+                $resolved[$compositeKey] = $cached;
             } else {
                 $urlsToFetch[$compositeKey] = self::BASE_URL . "/{$type}/{$idStr}/external_ids?api_key=" . urlencode($apiKey);
             }
@@ -432,7 +435,7 @@ final class TmdbMetadataProvider
                 $tmdbId = (int) $idStr;
                 $imdbId = trim((string) ($json['imdb_id'] ?? ''));
                 if ($imdbId !== '') {
-                    $resolved[$tmdbId] = $imdbId;
+                    $resolved["{$type}:{$tmdbId}"] = $imdbId;
                     $toCache["tmdb_ext_{$type}_{$tmdbId}"] = $imdbId;
                 }
             }
