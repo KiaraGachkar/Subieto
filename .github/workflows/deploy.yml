@@ -41,6 +41,7 @@ jobs:
         run: |
           lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "sftp://${FTP_SERVER}:${SFTP_PORT}" -e "
             set sftp:auto-confirm yes;
+            set ftp:list-options -a;
             set net:max-retries 2;
             set net:timeout 20;
 
@@ -61,7 +62,7 @@ jobs:
             mkdir -p ${CORE_DIR}/storage/pages;
             mkdir -p ${CORE_DIR}/storage/logs;
 
-            # 2. آپلود فقط محتوای public/ (index.php, .htaccess, assets) در ~/public_html
+            # 2. آپلود فقط محتوای public/ (شامل index.php, .htaccess, assets) در ~/public_html
             mirror -R --verbose --parallel=4 \
               ./public/ ${WEB_DIR}/;
 
