@@ -349,7 +349,7 @@ $adSlotsMeta = [
                         </div>
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
                             <div class="text-[11px] text-[#6c655a]">OpenSub Free</div>
-                            <div class="font-bold mt-0.5" :class="testData?.opensub_free?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.opensub_free?.ok ? (testData.opensub_free.count + ' subs') : 'Failed'"></div>
+                            <div class="font-bold mt-0.5" :class="testData?.opensub_free?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.opensub_free?.ok ? (testData.opensub_free.count + ' subs') : ('Failed · HTTP ' + (testData?.opensub_free?.status ?? '?') + ' · ' + (testData?.opensub_free?.bytes ?? '?') + 'B')"></div>
                         </div>
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
                             <div class="text-[11px] text-[#6c655a]">Podnapisi</div>
@@ -361,7 +361,7 @@ $adSlotsMeta = [
                         </div>
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
                             <div class="text-[11px] text-[#6c655a]">Subf2m</div>
-                            <div class="font-bold mt-0.5" :class="testData?.subf2m?.ok ? 'text-emerald-700' : 'text-amber-700'" x-text="testData?.subf2m?.ok ? (testData.subf2m.count + ' subs') : 'Blocked/0'"></div>
+                            <div class="font-bold mt-0.5" :class="testData?.subf2m?.ok ? 'text-emerald-700' : 'text-amber-700'" x-text="testData?.subf2m?.ok ? (testData.subf2m.count + ' subs') : ('Blocked · HTTP ' + (testData?.subf2m?.status ?? '?') + ' · ' + (testData?.subf2m?.bytes ?? '?') + 'B')"></div>
                         </div>
                     </div>
 

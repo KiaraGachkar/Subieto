@@ -331,12 +331,16 @@ final class AdminController extends BaseController
         $yifyItems = $yify->searchByImdbId('tt1375666', 'movie');
         $s2mItems  = $subf2m->searchByTitle('Inception', '2010');
 
+        $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+        $osProbe  = $this->http->request('GET', 'https://opensubtitles-v3.strem.io/subtitles/movie/tt1375666.json', ['Accept' => 'application/json'], null, 10);
+        $s2mProbe = $this->http->request('GET', 'https://subf2m.co/subtitles/searchbytitle?query=Inception&l=', ['User-Agent' => $ua, 'Accept' => 'text/html'], null, 10);
+
         echo json_encode([
             'metadata'      => ['ok' => $metaItem !== null, 'ms' => $metaMs, 'source' => $tmdb->hasTmdbKey() ? 'TMDB' : 'Cinemeta (Free)'],
-            'opensub_free'  => ['ok' => count($osItems) > 0, 'count' => count($osItems)],
+            'opensub_free'  => ['ok' => count($osItems) > 0, 'count' => count($osItems), 'status' => (int) $osProbe['status'], 'bytes' => strlen($osProbe['body'])],
             'podnapisi'     => ['ok' => count($podItems) > 0, 'count' => count($podItems)],
             'yify'          => ['ok' => count($yifyItems) > 0, 'count' => count($yifyItems)],
-            'subf2m'        => ['ok' => count($s2mItems) > 0, 'count' => count($s2mItems)],
+            'subf2m'        => ['ok' => count($s2mItems) > 0, 'count' => count($s2mItems), 'status' => (int) $s2mProbe['status'], 'bytes' => strlen($s2mProbe['body'])],
         ]);
     }
 
