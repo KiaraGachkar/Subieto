@@ -221,6 +221,86 @@ final class Subf2mProvider implements SubtitleProviderInterface
         return $items;
     }
 
+    /**
+     * @return \App\DTOs\SubtitleItem[]
+     */
+    public function searchSeries(string $title, string $year = '', int $maxPages = 8): array
+    {
+        if (!$this->isConfigured() || trim($title) === '' || !class_exists(DOMDocument::class)) {
+            return [];
+        }
+
+        $cacheKey = 'subf2m_series_' . md5(strtolower(trim($title)) . '|' . trim($year));
+        if ($this->cache !== null) {
+            $cached = $this->cache->get($cacheKey);
+            if (is_array($cached)) {
+                return array_map(static fn(array $row) => SubtitleItem::fromArray($row), $cached);
+            }
+        }
+
+        $res = $this->http->request(
+            'GET',
+            self::BASE_URL . '/subtitles/searchbytitle?query=' . urlencode(trim($title)) . '&l=',
+            $this->browserHeaders(),
+            null,
+            8
+        );
+        if ($res['status'] < 200 || $res['status'] >= 300 || $res['body'] === '') {
+            return [];
+        }
+
+        libxml_use_internal_errors(true);
+        $dom = new DOMDocument();
+        $dom->loadHTML('<?xml encoding="UTF-8">' . $res['body'], LIBXML_NONET);
+        libxml_clear_errors();
+        $xpath = new DOMXPath($dom);
+        $links = $xpath->query('//div[contains(@class,"search-result")]//a[contains(@href,"/subtitles/")]');
+        if (!$links || $links->length === 0) {
+            return [];
+        }
+
+        $needle = mb_strtolower(trim($title));
+        $paths = [];
+        foreach ($links as $a) {
+            $href = trim((string) $a->getAttribute('href'));
+            $text = mb_strtolower(trim((string) $a->textContent));
+            if ($href === '' || str_contains($href, 'searchbytitle') || !str_contains($text, $needle)) {
+                continue;
+            }
+            $paths[$href] = true;
+            if (count($paths) >= $maxPages) {
+                break;
+            }
+        }
+        if ($paths === []) {
+            return [];
+        }
+
+        $items = [];
+        $seen = [];
+        foreach (array_keys($paths) as $path) {
+            $detail = $this->http->request('GET', self::BASE_URL . $path, $this->browserHeaders(), null, 8);
+            if ($detail['status'] < 200 || $detail['status'] >= 300 || $detail['body'] === '') {
+                continue;
+            }
+            foreach ($this->extractSubtitlesFromDetailHtml($detail['body']) as $item) {
+                if (isset($seen[$item->id])) {
+                    continue;
+                }
+                $seen[$item->id] = true;
+                $items[] = $item;
+            }
+            if (count($items) >= 400) {
+                break;
+            }
+        }
+
+        if ($this->cache !== null) {
+            $this->cache->set($cacheKey, array_map(static fn(SubtitleItem $s) => $s->toArray(), $items), $items === [] ? 3600 : 86400);
+        }
+        return $items;
+    }
+
     private function browserHeaders(): array
     {
         return [

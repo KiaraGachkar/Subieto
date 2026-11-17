@@ -9,6 +9,7 @@ use App\Core\Cache;
 use App\Core\HttpClient;
 use App\Core\SettingsManager;
 use App\DTOs\SubtitleItem;
+use App\Providers\FreeOpenSubtitlesProvider;
 use App\Providers\Subf2mProvider;
 
 defined('APP_SECURE_BOOT') or exit;
@@ -94,9 +95,24 @@ final class SubtitleAggregatorService
                 }
             }
 
-            // Subf2m is title-based (not IMDb-based), so it cannot join the parallel
-            // batch. Run it whenever configured so its releases always appear.
-            if ($title !== '') {
+            // Series need special handling: the free OpenSubtitles endpoint is keyed by
+            // episode, and Subf2m splits series into one page per season.
+            if ($mediaType === 'tv') {
+                foreach ($this->providers as $provider) {
+                    if ($provider instanceof FreeOpenSubtitlesProvider && $provider->isConfigured()) {
+                        foreach ($provider->searchSeries($imdbId) as $item) {
+                            $all[] = $item;
+                        }
+                    }
+                    if ($provider instanceof Subf2mProvider && $provider->isConfigured() && $title !== '') {
+                        foreach ($provider->searchSeries($title, $year) as $item) {
+                            $all[] = $item;
+                        }
+                    }
+                }
+            } elseif ($title !== '') {
+                // Subf2m is title-based (not IMDb-based), so it cannot join the parallel
+                // batch. Run it whenever configured so its releases always appear.
                 foreach ($this->providers as $provider) {
                     if ($provider instanceof Subf2mProvider && $provider->isConfigured()) {
                         foreach ($provider->searchByTitle($title, $year) as $item) {
