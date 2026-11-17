@@ -1,5 +1,5 @@
 {
-    "name": "subieto/v33-seo-speed",
+    "name": "subieto/v35-split-deploy",
     "description": "PHP 8.1+ Bilingual Subtitle Aggregator with Hardened Security, Geo-Targeted Ads, Programmatic SEO & Partitioned Static Cache",
     "type": "project",
     "require": {

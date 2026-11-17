@@ -29,7 +29,9 @@ set_exception_handler(static function (Throwable $e): void {
     echo 'Internal Server Error';
 });
 
-$basePath = dirname(__DIR__);
+$basePath = is_dir(dirname(__DIR__) . '/subieto/src')
+    ? dirname(__DIR__) . '/subieto'
+    : dirname(__DIR__);
 $composerAutoload = $basePath . '/vendor/autoload.php';
 
 if (file_exists($composerAutoload)) {

@@ -1,4 +1,4 @@
-name: Deploy to cPanel (SFTP port 22)
+name: Deploy to cPanel (Split Public & Private Core)
 
 on:
   push:
@@ -10,7 +10,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REMOTE_DIR: "subieto"   # پوشه‌ی پروژه روی سرور (نسبت به home اکانت)
+  CORE_DIR: "subieto"       # هسته خصوصی پروژه بیرون از وب‌روت (~/subieto)
+  WEB_DIR: "public_html"    # پوشه عمومی دامنه (~/public_html)
   SFTP_PORT: "22"
 
 jobs:
@@ -32,7 +33,7 @@ jobs:
       - name: Install lftp
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
 
-      - name: Upload via SFTP
+      - name: Upload Core & Public via SFTP
         env:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
@@ -42,11 +43,26 @@ jobs:
             set sftp:auto-confirm yes;
             set net:max-retries 2;
             set net:timeout 20;
+
+            # 1. آپلود هسته خصوصی پروژه در ~/subieto (بیرون از public_html)
             mirror -R --verbose --parallel=4 \
               -x '^\.git' \
+              -x '^\.github' \
+              -x '^public/' \
               -x '^storage/' \
               -x '^config/database\.php$' \
               -x '^README\.md$' \
               -x '^composer\.lock$' \
-              ./ ${REMOTE_DIR}/;
+              ./ ${CORE_DIR}/;
+
+            # اطمینان از وجود پوشه‌های مورد نیاز در ~/subieto
+            mkdir -p ${CORE_DIR}/config;
+            mkdir -p ${CORE_DIR}/storage/cache;
+            mkdir -p ${CORE_DIR}/storage/pages;
+            mkdir -p ${CORE_DIR}/storage/logs;
+
+            # 2. آپلود فقط محتوای public/ (index.php, .htaccess, assets) در ~/public_html
+            mirror -R --verbose --parallel=4 \
+              ./public/ ${WEB_DIR}/;
+
             quit"
