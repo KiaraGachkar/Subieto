@@ -1,4 +1,4 @@
-name: Deploy to cPanel (SSH)
+name: Deploy to cPanel (SFTP port 22)
 
 on:
   push:
@@ -10,11 +10,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # ↓↓↓ این سه مورد را مستقیم همین‌جا ویرایش کنید ↓↓↓
-  SSH_HOST: "YOUR_SERVER_IP_OR_DOMAIN"      # مثلا 185.10.20.30
-  SSH_USER: "YOUR_CPANEL_USERNAME"          # نام کاربری cPanel
-  REMOTE_DIR: "~/subieto/"                  # مسیر پروژه روی سرور
-  SSH_PORT: "22"
+  REMOTE_DIR: "subieto"   # پوشه‌ی پروژه روی سرور (نسبت به home اکانت)
+  SFTP_PORT: "22"
 
 jobs:
   deploy:
@@ -32,19 +29,24 @@ jobs:
       - name: Install dependencies (production)
         run: composer install --no-dev -o --no-interaction --prefer-dist
 
-      - name: Install sshpass
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+      - name: Install lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
 
-      - name: Upload with rsync
+      - name: Upload via SFTP
         env:
-          SSHPASS: ${{ secrets.FTP_PASSWORD }}   # رمز cPanel (همان Secret که قبلا ساختید)
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
-          rsync -az --human-readable --stats \
-            -e "sshpass -e ssh -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new" \
-            --exclude='.git*' \
-            --exclude='.github/' \
-            --exclude='README.md' \
-            --exclude='composer.lock' \
-            --exclude='config/database.php' \
-            --exclude='storage/' \
-            ./ "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}"
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "sftp://${FTP_SERVER}:${SFTP_PORT}" -e "
+            set sftp:auto-confirm yes;
+            set net:max-retries 2;
+            set net:timeout 20;
+            mirror -R --verbose --parallel=4 \
+              -x '^\.git' \
+              -x '^storage/' \
+              -x '^config/database\.php$' \
+              -x '^README\.md$' \
+              -x '^composer\.lock$' \
+              ./ ${REMOTE_DIR}/;
+            quit"
