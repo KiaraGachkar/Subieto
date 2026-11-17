@@ -134,7 +134,7 @@ final class FreeOpenSubtitlesProvider implements SubtitleProviderInterface
      *
      * @return SubtitleItem[]
      */
-    public function searchSeries(string $imdbId, int $maxEpisodes = 48): array
+    public function searchSeries(string $imdbId, int $maxEpisodes = 120, ?int $season = null): array
     {
         $cleanImdb = strtolower(trim($imdbId));
         if (!$this->isConfigured() || !preg_match('/^tt\d{5,10}$/', $cleanImdb)) {
@@ -162,7 +162,44 @@ final class FreeOpenSubtitlesProvider implements SubtitleProviderInterface
             }
         }
 
-        $episodeIds = array_slice($episodeIds, 0, $maxEpisodes);
+        if ($season !== null) {
+            // One specific season: take every episode of it (bounded).
+            $episodeIds = array_values(array_filter(
+                $episodeIds,
+                static fn(string $id): bool => (int) (explode(':', $id)[1] ?? -1) === $season
+            ));
+            $episodeIds = array_slice($episodeIds, 0, 60);
+        } else {
+            // All seasons: round-robin across seasons (E1 of every season, then E2, ...)
+            // so later seasons are represented instead of only the first ~48 episodes.
+            $bySeason = [];
+            foreach ($episodeIds as $id) {
+                $parts = explode(':', $id);
+                $sNum = (int) ($parts[1] ?? 0);
+                if ($sNum < 1) {
+                    continue; // skip specials in the overview
+                }
+                $bySeason[$sNum][] = $id;
+            }
+            ksort($bySeason);
+            $picked = [];
+            for ($i = 0; count($picked) < $maxEpisodes; $i++) {
+                $added = false;
+                foreach ($bySeason as $list) {
+                    if (isset($list[$i])) {
+                        $picked[] = $list[$i];
+                        $added = true;
+                        if (count($picked) >= $maxEpisodes) {
+                            break;
+                        }
+                    }
+                }
+                if (!$added) {
+                    break;
+                }
+            }
+            $episodeIds = $picked;
+        }
         if ($episodeIds === []) {
             return [];
         }

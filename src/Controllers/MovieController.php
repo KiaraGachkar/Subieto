@@ -183,6 +183,13 @@ final class MovieController extends BaseController
         }
 
         $displayedSubtitles = $allSubtitles;
+        if ($season !== null && $media->mediaType === 'tv') {
+            // The overview list only samples each season; fetch the requested season in full.
+            $seasonSubs = $aggregator->getSubtitlesForImdb($media->imdbId, $media->mediaType, $media->title, $media->year, $season);
+            if ($seasonSubs !== []) {
+                $displayedSubtitles = $seasonSubs;
+            }
+        }
         if ($langInfo !== null) {
             $displayedSubtitles = array_values(array_filter(
                 $displayedSubtitles,

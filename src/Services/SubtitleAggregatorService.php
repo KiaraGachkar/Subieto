@@ -32,7 +32,7 @@ final class SubtitleAggregatorService
      *
      * @return SubtitleItem[]
      */
-    public function getSubtitlesForImdb(string $imdbId, string $mediaType = 'movie', string $title = '', string $year = ''): array
+    public function getSubtitlesForImdb(string $imdbId, string $mediaType = 'movie', string $title = '', string $year = '', ?int $season = null): array
     {
         $imdbId = strtolower(trim($imdbId));
         $priorityRaw = strtolower(trim((string) $this->settings->get('providers.priority_languages', 'en,fa,ar,es,fr,tr')));
@@ -47,7 +47,8 @@ final class SubtitleAggregatorService
             $configParts[] = $keyName . ':' . ($keyValue !== '' ? substr(hash('sha256', $keyValue), 0, 8) : '0');
         }
         $configHash = substr(md5(implode('|', $configParts)), 0, 8);
-        $cacheKey = "subs_v8_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}";
+        $seasonPart = $season !== null ? "_s{$season}" : '';
+        $cacheKey = "subs_v9_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}{$seasonPart}";
 
         $cached = $this->cache->get($cacheKey);
         if (is_array($cached)) {
@@ -100,12 +101,12 @@ final class SubtitleAggregatorService
             if ($mediaType === 'tv') {
                 foreach ($this->providers as $provider) {
                     if ($provider instanceof FreeOpenSubtitlesProvider && $provider->isConfigured()) {
-                        foreach ($provider->searchSeries($imdbId) as $item) {
+                        foreach ($provider->searchSeries($imdbId, 120, $season) as $item) {
                             $all[] = $item;
                         }
                     }
                     if ($provider instanceof Subf2mProvider && $provider->isConfigured() && $title !== '') {
-                        foreach ($provider->searchSeries($title, $year) as $item) {
+                        foreach ($provider->searchSeries($title, $year, 12) as $item) {
                             $all[] = $item;
                         }
                     }
