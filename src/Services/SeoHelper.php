@@ -31,7 +31,7 @@ final class SeoHelper
     public static function isTrustedHost(): bool
     {
         if (self::$configuredBaseUrl === '') {
-            return false;
+            return true;
         }
         $configuredHost = strtolower((string) parse_url(self::$configuredBaseUrl, PHP_URL_HOST));
         $incomingHost   = strtolower((string) explode(':', $_SERVER['HTTP_HOST'] ?? '')[0]);

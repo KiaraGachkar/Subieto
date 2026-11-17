@@ -82,6 +82,10 @@ $adSlotsMeta = [
             </div>
 
             <div class="flex items-center gap-2">
+                <a href="/admin?lang=<?= $isFa ? 'en' : 'fa' ?>" class="px-2.5 py-1.5 rounded-full bg-white border border-[#efeae1] hover:border-[#2e6f40]/40 text-xs font-bold text-[#6c655a] transition-colors" aria-label="<?= $isFa ? 'English' : 'فارسی' ?>">
+                    <?= $isFa ? 'EN' : 'فا' ?>
+                </a>
+
                 <a href="/" target="_blank" class="px-3.5 py-1.5 rounded-full bg-white border border-[#efeae1] hover:border-[#2e6f40]/40 text-xs font-bold text-[#2b302d] flex items-center gap-1 transition-colors">
                     <span><?= $t('مشاهده سایت', 'Open Site') ?></span>
                     <span class="material-symbols-outlined text-[14px]">open_in_new</span>

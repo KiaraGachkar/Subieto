@@ -4,6 +4,18 @@ declare(strict_types=1);
 
 define('APP_SECURE_BOOT', true);
 
+$GLOBALS['SB_T0']    = microtime(true);
+$GLOBALS['SB_TIMES'] = [];
+header_register_callback(static function (): void {
+    $times = $GLOBALS['SB_TIMES'] ?? [];
+    $times['total'] = microtime(true) - ($GLOBALS['SB_T0'] ?? microtime(true));
+    $parts = [];
+    foreach ($times as $name => $seconds) {
+        $parts[] = $name . ';dur=' . round($seconds * 1000, 1);
+    }
+    header('Server-Timing: ' . implode(', ', $parts));
+});
+
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
@@ -114,6 +126,8 @@ if ($installer->isInstalled()) {
     }
 }
 
+$GLOBALS['SB_TIMES']['db'] = microtime(true) - $GLOBALS['SB_T0'];
+
 $pageCache = new StaticPageCache($basePath);
 $cacheableRoute = $requestPath === '/'
     || $requestPath === '/search'
@@ -130,7 +144,9 @@ if ($installer->isInstalled()
     $queryParams = [];
     parse_str((string) (parse_url($requestUri, PHP_URL_QUERY) ?? ''), $queryParams);
     $queryPart = $queryParams !== [] ? '?' . md5(http_build_query($queryParams)) : '';
-    $cacheKey = $requestPath . $queryPart . ':' . $locale . ':' . $geo;
+    $hostKey  = strtolower(explode(':', (string) ($_SERVER['HTTP_HOST'] ?? ''))[0]);
+    $cacheKey = $requestPath . $queryPart . ':' . $locale . ':' . $geo . ':' . $hostKey;
+    $GLOBALS['SB_TIMES']['cache'] = microtime(true) - $GLOBALS['SB_T0'];
     if ($pageCache->serveIfValid($cacheKey, 7200)) {
         (new MetricsService($db, $prefix, $basePath . '/storage'))->recordCachedView();
         exit;
@@ -189,3 +205,5 @@ $router->dispatch($requestMethod, $requestUri, [
     'cache'     => $cache,
     'pageCache' => $pageCache,
 ]);
+
+$GLOBALS['SB_TIMES']['app'] = microtime(true) - $GLOBALS['SB_T0'];

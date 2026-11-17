@@ -20,7 +20,16 @@ final class LocaleService
 
     public static function resolveAdminLocale(): string
     {
-        return 'en';
+        $requested = strtolower(trim((string) ($_GET['lang'] ?? '')));
+        if ($requested === 'fa' || $requested === 'en') {
+            if (!headers_sent()) {
+                setcookie('sb_admin_lang', $requested, time() + 60 * 60 * 24 * 365, '/', '', false, true);
+            }
+            return $requested;
+        }
+
+        $saved = strtolower(trim((string) ($_COOKIE['sb_admin_lang'] ?? '')));
+        return $saved === 'en' ? 'en' : 'fa';
     }
 
     /**

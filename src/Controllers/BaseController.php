@@ -88,7 +88,8 @@ abstract class BaseController
             return;
         }
 
-        $partitionedKey = "{$cachePath}:{$locale}:{$geo}";
+        $hostKey = strtolower(explode(':', (string) ($_SERVER['HTTP_HOST'] ?? ''))[0]);
+        $partitionedKey = "{$cachePath}:{$locale}:{$geo}:{$hostKey}";
         if ($this->pageCache !== null && $ttl > 0 && SeoHelper::isTrustedHost()) {
             $this->pageCache->store($partitionedKey, $html, $ttl);
             StaticPageCache::emitCacheHeaders(min($ttl, 1800));
