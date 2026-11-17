@@ -324,35 +324,41 @@ final class AdminController extends BaseController
         $yify      = new YifySubtitlesProvider($this->http, $this->settings);
         $subf2m    = new Subf2mProvider($this->http, $this->settings, $this->cache);
 
-        $t0 = microtime(true);
-        $metaItem = $tmdb->findByImdbId('tt1375666');
-        $metaMs   = (int) round((microtime(true) - $t0) * 1000);
+        try {
+            $t0 = microtime(true);
+            $metaItem = $tmdb->findByImdbId('tt1375666');
+            $metaMs   = (int) round((microtime(true) - $t0) * 1000);
 
-        // Run all primary free provider checks concurrently in a single parallel batch
-        $batch = [];
-        if ($reqOs = $freeOs->buildSearchRequest('tt1375666', 'movie')) {
-            $batch['os'] = $reqOs;
-        }
-        if ($reqPod = $podnapisi->buildSearchRequest('tt1375666', 'movie')) {
-            $batch['pod'] = $reqPod;
-        }
-        if ($reqYify = $yify->buildSearchRequest('tt1375666', 'movie')) {
-            $batch['yify'] = $reqYify;
-        }
-        $batchRes = $this->http->getJsonBatch($batch, 7);
+            // Run all primary free provider checks concurrently in a single parallel batch
+            $batch = [];
+            if ($reqOs = $freeOs->buildSearchRequest('tt1375666', 'movie')) {
+                $batch['os'] = $reqOs;
+            }
+            if ($reqPod = $podnapisi->buildSearchRequest('tt1375666', 'movie')) {
+                $batch['pod'] = $reqPod;
+            }
+            if ($reqYify = $yify->buildSearchRequest('tt1375666', 'movie')) {
+                $batch['yify'] = $reqYify;
+            }
+            $batchRes = $this->http->getJsonBatch($batch, 7);
 
-        $osItems   = isset($batch['os']) ? $freeOs->parseSearchResponse($batchRes['os'] ?? null) : [];
-        $podItems  = isset($batch['pod']) ? $podnapisi->parseSearchResponse($batchRes['pod'] ?? null) : [];
-        $yifyItems = isset($batch['yify']) ? $yify->parseSearchResponse($batchRes['yify'] ?? null) : [];
-        $s2mItems  = $subf2m->searchByTitle('Inception', '2010');
+            $osItems   = isset($batch['os']) ? $freeOs->parseSearchResponse($batchRes['os'] ?? null) : [];
+            $podItems  = isset($batch['pod']) ? $podnapisi->parseSearchResponse($batchRes['pod'] ?? null) : [];
+            $yifyItems = isset($batch['yify']) ? $yify->parseSearchResponse($batchRes['yify'] ?? null) : [];
+            $s2mItems  = $subf2m->searchByTitle('Inception', '2010');
 
-        echo json_encode([
-            'metadata'      => ['ok' => $metaItem !== null, 'ms' => $metaMs, 'source' => $tmdb->hasTmdbKey() ? 'TMDB' : 'Cinemeta (Free)'],
-            'opensub_free'  => ['ok' => count($osItems) > 0, 'count' => count($osItems)],
-            'podnapisi'     => ['ok' => count($podItems) > 0, 'count' => count($podItems)],
-            'yify'          => ['ok' => count($yifyItems) > 0, 'count' => count($yifyItems)],
-            'subf2m'        => ['ok' => count($s2mItems) > 0, 'count' => count($s2mItems)],
-        ]);
+            echo json_encode([
+                'metadata'      => ['ok' => $metaItem !== null, 'ms' => $metaMs, 'source' => $tmdb->hasTmdbKey() ? 'TMDB' : 'Cinemeta (Free)'],
+                'opensub_free'  => ['ok' => count($osItems) > 0, 'count' => count($osItems)],
+                'podnapisi'     => ['ok' => count($podItems) > 0, 'count' => count($podItems)],
+                'yify'          => ['ok' => count($yifyItems) > 0, 'count' => count($yifyItems)],
+                'subf2m'        => ['ok' => count($s2mItems) > 0, 'count' => count($s2mItems)],
+            ]);
+        } catch (\Throwable $e) {
+            error_log('[test-apis] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            http_response_code(500);
+            echo json_encode(['error' => 'exception', 'message' => $e->getMessage()]);
+        }
     }
 
     private function requireAdmin(): void

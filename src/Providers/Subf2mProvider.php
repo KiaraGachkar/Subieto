@@ -126,7 +126,7 @@ final class Subf2mProvider implements SubtitleProviderInterface
             return null;
         }
 
-        if (preg_match('#href=["'](/subtitle/download[^"']+)["']#i', $res['body'], $m)) {
+        if (preg_match('#href=["\'](/subtitle/download[^"\']+)["\']#i', $res['body'], $m)) {
             return self::BASE_URL . html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
         }
 
