@@ -335,12 +335,17 @@ final class AdminController extends BaseController
         $osProbe  = $this->http->request('GET', 'https://opensubtitles-v3.strem.io/subtitles/movie/tt1375666.json', ['Accept' => 'application/json'], null, 10);
         $s2mProbe = $this->http->request('GET', 'https://subf2m.co/subtitles/searchbytitle?query=Inception&l=', ['User-Agent' => $ua, 'Accept' => 'text/html'], null, 10);
 
+        $osDecoded = json_decode($osProbe['body'], true);
+        $osJsonError = json_last_error_msg();
+        $osParsed = is_array($osDecoded) && is_array($osDecoded['subtitles'] ?? null) ? count($osDecoded['subtitles']) : -1;
+        $s2mBody = (string) $s2mProbe['body'];
+
         echo json_encode([
             'metadata'      => ['ok' => $metaItem !== null, 'ms' => $metaMs, 'source' => $tmdb->hasTmdbKey() ? 'TMDB' : 'Cinemeta (Free)'],
-            'opensub_free'  => ['ok' => count($osItems) > 0, 'count' => count($osItems), 'status' => (int) $osProbe['status'], 'bytes' => strlen($osProbe['body'])],
+            'opensub_free'  => ['ok' => count($osItems) > 0, 'count' => count($osItems), 'status' => (int) $osProbe['status'], 'bytes' => strlen($osProbe['body']), 'json_error' => $osJsonError, 'raw_subs' => $osParsed],
             'podnapisi'     => ['ok' => count($podItems) > 0, 'count' => count($podItems)],
             'yify'          => ['ok' => count($yifyItems) > 0, 'count' => count($yifyItems)],
-            'subf2m'        => ['ok' => count($s2mItems) > 0, 'count' => count($s2mItems), 'status' => (int) $s2mProbe['status'], 'bytes' => strlen($s2mProbe['body'])],
+            'subf2m'        => ['ok' => count($s2mItems) > 0, 'count' => count($s2mItems), 'status' => (int) $s2mProbe['status'], 'bytes' => strlen($s2mProbe['body']), 'has_search' => str_contains($s2mBody, 'search-result'), 'has_item' => str_contains($s2mBody, "class='item"), 'has_download' => str_contains($s2mBody, 'icon-download')],
         ]);
     }
 

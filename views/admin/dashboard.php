@@ -349,7 +349,7 @@ $adSlotsMeta = [
                         </div>
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
                             <div class="text-[11px] text-[#6c655a]">OpenSub Free</div>
-                            <div class="font-bold mt-0.5" :class="testData?.opensub_free?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.opensub_free?.ok ? (testData.opensub_free.count + ' subs') : ('Failed · HTTP ' + (testData?.opensub_free?.status ?? '?') + ' · ' + (testData?.opensub_free?.bytes ?? '?') + 'B')"></div>
+                            <div class="font-bold mt-0.5" :class="testData?.opensub_free?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.opensub_free?.ok ? (testData.opensub_free.count + ' subs') : ('Failed · ' + (testData?.opensub_free?.bytes ?? '?') + 'B · json=' + (testData?.opensub_free?.json_error ?? '?') + ' · raw=' + (testData?.opensub_free?.raw_subs ?? '?'))"></div>
                         </div>
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
                             <div class="text-[11px] text-[#6c655a]">Podnapisi</div>
@@ -361,7 +361,7 @@ $adSlotsMeta = [
                         </div>
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
                             <div class="text-[11px] text-[#6c655a]">Subf2m</div>
-                            <div class="font-bold mt-0.5" :class="testData?.subf2m?.ok ? 'text-emerald-700' : 'text-amber-700'" x-text="testData?.subf2m?.ok ? (testData.subf2m.count + ' subs') : ('Blocked · HTTP ' + (testData?.subf2m?.status ?? '?') + ' · ' + (testData?.subf2m?.bytes ?? '?') + 'B')"></div>
+                            <div class="font-bold mt-0.5" :class="testData?.subf2m?.ok ? 'text-emerald-700' : 'text-amber-700'" x-text="testData?.subf2m?.ok ? (testData.subf2m.count + ' subs') : ('Blocked · ' + (testData?.subf2m?.bytes ?? '?') + 'B · search=' + (testData?.subf2m?.has_search ?? '?') + ' item=' + (testData?.subf2m?.has_item ?? '?') + ' dl=' + (testData?.subf2m?.has_download ?? '?'))"></div>
                         </div>
                     </div>
 
