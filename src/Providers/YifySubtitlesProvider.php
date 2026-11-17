@@ -42,7 +42,7 @@ final class YifySubtitlesProvider implements SubtitleProviderInterface
 
         return [
             'url'     => self::BASE_URL . '/movie-imdb/' . urlencode(strtolower($imdbId)),
-            'headers' => ['Accept' => 'text/html,application/xhtml+xml'],
+            'headers' => $this->browserHeaders(),
             'rawHtml' => true,
         ];
     }
@@ -64,7 +64,7 @@ final class YifySubtitlesProvider implements SubtitleProviderInterface
             return [];
         }
 
-        $res = $this->http->request('GET', $req['url'], $req['headers'], null, 10);
+        $res = $this->http->request('GET', $req['url'], $this->browserHeaders(), null, 10);
         if ($res['status'] < 200 || $res['status'] >= 300 || $res['body'] === '') {
             return [];
         }
@@ -140,6 +140,16 @@ final class YifySubtitlesProvider implements SubtitleProviderInterface
         }
 
         return $items;
+    }
+
+    private function browserHeaders(): array
+    {
+        return [
+            'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language' => 'en-US,en;q=0.9',
+            'Referer'         => self::BASE_URL . '/',
+        ];
     }
 
     private function detectQuality(string $release): string

@@ -43,7 +43,7 @@ final class ProxyDownloadService
             return;
         }
 
-        $cleanFileName = $this->sanitizeFileName($desiredFileName);
+        $cleanFileName = $this->brandFileName($this->sanitizeFileName($desiredFileName));
 
         $browserHeaders = [
             'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -170,6 +170,12 @@ final class ProxyDownloadService
                 $entryName = $zip->getNameIndex($i);
                 if (!is_string($entryName) || str_ends_with($entryName, '/')) {
                     continue;
+                }
+
+                $brandedEntry = $this->brandFileName($entryName);
+                if ($brandedEntry !== $entryName && $zip->renameName($i, $brandedEntry)) {
+                    $modified = true;
+                    $entryName = $brandedEntry;
                 }
 
                 $ext = strtolower(pathinfo($entryName, PATHINFO_EXTENSION));
@@ -364,5 +370,18 @@ final class ProxyDownloadService
         $name = basename($name);
         $name = preg_replace('/[^a-zA-Z0-9._-]+/', '_', $name) ?? 'subtitle.srt';
         return $name !== '' ? $name : 'subtitle.srt';
+    }
+
+    private function brandFileName(string $name): string
+    {
+        $providers = 'yifysubtitles|yify|yts|subf2m|subdl|opensubtitles|podnapisi|addic7ed|tvsubtitles';
+        if (!preg_match('/' . $providers . '/i', $name)) {
+            return $name;
+        }
+
+        $site = preg_replace('/[^a-zA-Z0-9_-]+/', '', (string) $this->settings->get('site.title', 'Subieto')) ?: 'Subieto';
+        $name = preg_replace('/\[[^\]]*(?:' . $providers . ')[^\]]*\]/i', $site, $name) ?? $name;
+        $name = preg_replace('/(?<![A-Za-z0-9])(?:' . $providers . ')(?![A-Za-z0-9])/i', $site, $name) ?? $name;
+        return preg_replace('/[._-]{2,}/', '_', $name) ?? $name;
     }
 }

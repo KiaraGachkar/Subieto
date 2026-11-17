@@ -94,10 +94,9 @@ final class SubtitleAggregatorService
                 }
             }
 
-            // The parallel batch already produced plenty of results; the
-            // Subf2m title fallback costs two sequential 5s HTTP calls, so only
-            // run it when the batch came up short.
-            if ($title !== '' && count($all) < 5) {
+            // Subf2m is title-based (not IMDb-based), so it cannot join the parallel
+            // batch. Run it whenever configured so its releases always appear.
+            if ($title !== '') {
                 foreach ($this->providers as $provider) {
                     if ($provider instanceof Subf2mProvider && $provider->isConfigured()) {
                         foreach ($provider->searchByTitle($title, $year) as $item) {
