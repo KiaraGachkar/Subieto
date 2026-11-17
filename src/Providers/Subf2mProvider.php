@@ -224,7 +224,7 @@ final class Subf2mProvider implements SubtitleProviderInterface
     /**
      * @return \App\DTOs\SubtitleItem[]
      */
-    public function searchSeries(string $title, string $year = '', int $maxPages = 8): array
+    public function searchSeries(string $title, string $year = '', int $maxPages = 5): array
     {
         if (!$this->isConfigured() || trim($title) === '' || !class_exists(DOMDocument::class)) {
             return [];

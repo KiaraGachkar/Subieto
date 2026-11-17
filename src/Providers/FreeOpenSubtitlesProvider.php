@@ -117,7 +117,7 @@ final class FreeOpenSubtitlesProvider implements SubtitleProviderInterface
      *
      * @return \App\DTOs\SubtitleItem[]
      */
-    public function searchSeries(string $imdbId, int $maxEpisodes = 80): array
+    public function searchSeries(string $imdbId, int $maxEpisodes = 36): array
     {
         if (!$this->isConfigured() || !preg_match('/^tt\d{5,10}$/i', $imdbId)) {
             return [];

@@ -110,9 +110,9 @@ final class SubtitleAggregatorService
                         }
                     }
                 }
-            } elseif ($title !== '') {
-                // Subf2m is title-based (not IMDb-based), so it cannot join the parallel
-                // batch. Run it whenever configured so its releases always appear.
+            } elseif ($title !== '' && count($all) < 5) {
+                // Subf2m costs two sequential requests; keep it as a fallback for movies
+                // so a cold page does not blow the host's execution budget.
                 foreach ($this->providers as $provider) {
                     if ($provider instanceof Subf2mProvider && $provider->isConfigured()) {
                         foreach ($provider->searchByTitle($title, $year) as $item) {
