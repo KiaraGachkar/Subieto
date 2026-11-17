@@ -171,7 +171,8 @@ final class FreeOpenSubtitlesProvider implements SubtitleProviderInterface
         $requests = [];
         foreach ($episodeIds as $episodeId) {
             $requests[$episodeId] = [
-                'url'     => self::BASE_URL . '/series/' . rawurlencode((string) $episodeId) . '.json',
+                // Episode id (tt123:S:E) was validated above; the API expects literal colons, not %3A.
+                'url'     => self::BASE_URL . '/series/' . (string) $episodeId . '.json',
                 'headers' => $this->apiHeaders(),
             ];
         }
