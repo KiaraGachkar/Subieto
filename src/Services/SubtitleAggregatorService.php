@@ -47,7 +47,7 @@ final class SubtitleAggregatorService
             $configParts[] = $keyName . ':' . ($keyValue !== '' ? substr(hash('sha256', $keyValue), 0, 8) : '0');
         }
         $configHash = substr(md5(implode('|', $configParts)), 0, 8);
-        $cacheKey = "subs_v5_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}";
+        $cacheKey = "subs_v8_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}";
 
         $cached = $this->cache->get($cacheKey);
         if (is_array($cached)) {
@@ -110,17 +110,40 @@ final class SubtitleAggregatorService
                         }
                     }
                 }
-            } elseif ($title !== '' && count($all) < 5) {
-                // Subf2m costs two sequential requests; keep it as a fallback for movies
-                // so a cold page does not blow the host's execution budget.
-                foreach ($this->providers as $provider) {
-                    if ($provider instanceof Subf2mProvider && $provider->isConfigured()) {
-                        foreach ($provider->searchByTitle($title, $year) as $item) {
-                            $all[] = $item;
+            } elseif ($title !== '') {
+                $faCount = 0;
+                foreach ($all as $existing) {
+                    if ($existing->languageCode === 'fa') {
+                        $faCount++;
+                    }
+                }
+                // Run Subf2m whenever total results are scarce OR Persian subtitles are scarce (< 3)
+                if (count($all) < 8 || $faCount < 3) {
+                    foreach ($this->providers as $provider) {
+                        if ($provider instanceof Subf2mProvider && $provider->isConfigured()) {
+                            foreach ($provider->searchByTitle($title, $year) as $item) {
+                                $all[] = $item;
+                            }
                         }
                     }
                 }
             }
+
+            // Deduplicate identical release + language + episode combinations across mirrors
+            $deduped = [];
+            $seenKeys = [];
+            foreach ($all as $item) {
+                $normRel = preg_replace('/[^a-z0-9]+/', '', strtolower($item->releaseName));
+                $dKey = $item->languageCode . '|' . $normRel . '|' . ($item->season ?? 0) . '|' . ($item->episode ?? 0);
+                if ($normRel !== '' && isset($seenKeys[$dKey])) {
+                    continue;
+                }
+                if ($normRel !== '') {
+                    $seenKeys[$dKey] = true;
+                }
+                $deduped[] = $item;
+            }
+            $all = $deduped;
 
             $priorityList = array_values(array_filter(array_map('trim', explode(',', $priorityRaw)), static fn(string $v): bool => $v !== ''));
             $priorityMap  = array_flip($priorityList);

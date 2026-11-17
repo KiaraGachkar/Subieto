@@ -313,6 +313,9 @@ final class TmdbMetadataProvider
     {
         $cacheKey = "cinemeta_imdb_{$imdbId}";
         $cached = $this->cache->get($cacheKey);
+        if ($cached === ['_miss' => true]) {
+            return null;
+        }
         if (is_array($cached)) {
             return MediaItem::fromArray($cached);
         }
@@ -332,6 +335,8 @@ final class TmdbMetadataProvider
         if ($item !== null) {
             $ttl = (int) $this->settings->get('site.cache_ttl', 21600);
             $this->cache->set($cacheKey, $item->toArray(), $ttl);
+        } else {
+            $this->cache->set($cacheKey, ['_miss' => true], 600);
         }
         return $item;
     }

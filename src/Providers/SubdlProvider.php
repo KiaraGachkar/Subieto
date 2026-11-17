@@ -44,7 +44,8 @@ final class SubdlProvider implements SubtitleProviderInterface
             'api_key'       => $apiKey,
             'imdb_id'       => $imdbId,
             'type'          => $mediaType === 'tv' ? 'tv' : 'movie',
-                        'subs_per_page' => 50,
+                        'subs_per_page' => 60,
+            'languages'     => 'FA,EN,AR,TR,ES,FR',
         ]);
 
         return [

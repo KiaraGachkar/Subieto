@@ -20,6 +20,9 @@ final class LanguageMap
         'farsi' => ['code' => 'fa', 'label' => 'Persian', 'slug' => 'persian'],
         'persian' => ['code' => 'fa', 'label' => 'Persian', 'slug' => 'persian'],
         'farsi_persian' => ['code' => 'fa', 'label' => 'Persian', 'slug' => 'persian'],
+        'farsi/persian' => ['code' => 'fa', 'label' => 'Persian', 'slug' => 'persian'],
+        'fa-ir' => ['code' => 'fa', 'label' => 'Persian', 'slug' => 'persian'],
+        'ir' => ['code' => 'fa', 'label' => 'Persian', 'slug' => 'persian'],
 
         'ar' => ['code' => 'ar', 'label' => 'Arabic', 'slug' => 'arabic'],
         'ara' => ['code' => 'ar', 'label' => 'Arabic', 'slug' => 'arabic'],

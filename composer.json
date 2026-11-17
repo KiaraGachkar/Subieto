@@ -1,5 +1,5 @@
 {
-    "name": "subieto/v36-complete",
+    "name": "subieto/v41-persian-boost",
     "description": "PHP 8.1+ Bilingual Subtitle Aggregator with Hardened Security, Geo-Targeted Ads, Programmatic SEO & Partitioned Static Cache",
     "type": "project",
     "require": {

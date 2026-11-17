@@ -251,6 +251,18 @@ $baseP    = $urlParts['path'] ?? '/';
         });
 
 
+<?php
+$hasIrAds = false;
+if ($settings->get('ads.enabled', '1') === '1') {
+    foreach (['header_banner', 'home_below_search', 'home_between', 'home_footer_banner', 'search_top_banner', 'movie_sidebar', 'movie_above_table', 'movie_in_feed', 'movie_below_table', 'sticky_footer_mobile'] as $_s) {
+        if (trim((string) $settings->get('ads.' . $_s . '_ir', '')) !== '') {
+            $hasIrAds = true;
+            break;
+        }
+    }
+}
+?>
+        <?php if ($hasIrAds): ?>
         // Geo-accurate ad slot hydration for cached pages (Iran IRR vs VPN/Global USD)
         window.addEventListener('DOMContentLoaded', function () {
             var slotEls = document.querySelectorAll('[data-ad-slot]');
@@ -268,6 +280,7 @@ $baseP    = $urlParts['path'] ?? '/';
                 })
                 .catch(function () {});
         });
+        <?php endif; ?>
 
         function liveSearch(isPrimary = true) {
             return {

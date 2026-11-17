@@ -150,7 +150,7 @@ final class MovieController extends BaseController
 
         $this->metrics->recordPageView();
 
-        $freeOpenSub = new FreeOpenSubtitlesProvider($this->http, $this->settings);
+        $freeOpenSub = new FreeOpenSubtitlesProvider($this->http, $this->settings, $this->cache);
         $podnapisi   = new PodnapisiProvider($this->http, $this->settings);
         $yify        = new YifySubtitlesProvider($this->http, $this->settings);
         $subf2m      = new Subf2mProvider($this->http, $this->settings, $this->cache);
@@ -194,6 +194,9 @@ final class MovieController extends BaseController
                 $displayedSubtitles,
                 static fn($s) => $s->season === $season
             ));
+        }
+        if (count($displayedSubtitles) > 250) {
+            $displayedSubtitles = array_slice($displayedSubtitles, 0, 250);
         }
 
         $similarMedia = $tmdb->getSimilar($media->tmdbId, $media->mediaType, 6);

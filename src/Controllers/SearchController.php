@@ -197,19 +197,26 @@ final class SearchController extends BaseController
 
         $list = array_values($merged);
 
-        // Local indexed_media rows carry no poster URL, so titles the live API did not
-        // return would render an empty thumbnail. Fill them from the metadata provider.
-        foreach ($list as $item) {
-            if ($item->posterUrl !== '') {
-                continue;
+        // Batch-fill missing poster URLs from cache/Cinemeta in parallel (max 4 items) instead of sequential N+1 HTTP calls
+        $missingPosters = [];
+        foreach ($list as $idx => $item) {
+            if ($item->posterUrl === '' && preg_match('/^tt\d{5,10}$/', $item->imdbId)) {
+                $cType = $item->mediaType === 'tv' ? 'series' : 'movie';
+                $cachedMeta = $this->cache->get("cinemeta_imdb_{$item->imdbId}");
+                if (is_array($cachedMeta) && !empty($cachedMeta['posterUrl'])) {
+                    $item->posterUrl = (string) $cachedMeta['posterUrl'];
+                } elseif (count($missingPosters) < 4) {
+                    $missingPosters[$idx] = "https://v3-cinemeta.strem.io/meta/{$cType}/{$item->imdbId}.json";
+                }
             }
-            try {
-                $detail = $tmdb->findByImdbId($item->imdbId);
-            } catch (Throwable) {
-                continue;
-            }
-            if ($detail !== null && $detail->posterUrl !== '') {
-                $item->posterUrl = $detail->posterUrl;
+        }
+        if ($missingPosters !== []) {
+            $batchMeta = $this->http->getJsonBatch($missingPosters, 4);
+            foreach ($batchMeta as $idx => $metaJson) {
+                $poster = trim((string) ($metaJson['meta']['poster'] ?? ''));
+                if ($poster !== '' && isset($list[$idx])) {
+                    $list[$idx]->posterUrl = $poster;
+                }
             }
         }
 

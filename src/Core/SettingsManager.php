@@ -135,5 +135,21 @@ final class SettingsManager
             $stmt->execute([':k' => $k, ':v' => $v]);
             $this->flat[$k] = $v;
         }
+        $this->writeBootCache();
+    }
+
+    public function writeBootCache(): void
+    {
+        $cacheDir = dirname(__DIR__, 2) . '/storage/cache';
+        if (!is_dir($cacheDir)) {
+            @mkdir($cacheDir, 0755, true);
+        }
+        $payload = json_encode([
+            'trusted_proxies' => (string) ($this->flat['security.trusted_proxies'] ?? ''),
+            'base_url'        => (string) ($this->flat['site.base_url'] ?? ''),
+        ]);
+        if ($payload !== false) {
+            @file_put_contents($cacheDir . '/boot_meta.json', $payload, LOCK_EX);
+        }
     }
 }

@@ -61,6 +61,32 @@ final class MetricsService
      * - Uses only the cheap in-process APCu dedup (IP+URI, 15-minute window).
      * - Does a single append to the JSONL buffer; flushBuffer() aggregates it.
      */
+    public static function recordCachedViewFast(string $storageDir, string $prefix = 'sh_'): void
+    {
+        if (!function_exists('apcu_enabled') || !apcu_enabled()) {
+            return;
+        }
+        $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        if ($method !== 'GET') {
+            return;
+        }
+        $ua = strtolower(trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? '')));
+        if ($ua === '' || strlen($ua) < 12 || preg_match('/bot|crawl|spider|slurp|curl\/|wget\/|python|go-http|lighthouse|pagespeed|gtmetrix|ahrefs|semrush/i', $ua)) {
+            return;
+        }
+        $ip   = ClientIp::get();
+        $path = parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/';
+        $k    = $prefix . 'pv_' . substr(hash('sha256', $ip . '|' . $path), 0, 20);
+        if (apcu_exists($k)) {
+            return;
+        }
+        @apcu_store($k, 1, self::DEDUP_WINDOW_SECONDS);
+        $line = json_encode(['type' => 'pv', 'date' => date('Y-m-d')], JSON_UNESCAPED_UNICODE);
+        if ($line !== false) {
+            @file_put_contents($storageDir . '/metrics_buffer.jsonl', $line . "\n", FILE_APPEND | LOCK_EX);
+        }
+    }
+
     public function recordCachedView(): void
     {
         if (!$this->hasApcu() || !$this->isHumanPageView(false)) {
@@ -427,11 +453,16 @@ final class MetricsService
             return;
         }
         $checked = true;
+        $flagFile = dirname($this->bufferFile) . '/cache/.schema_langs_ok';
+        if (is_file($flagFile)) {
+            return;
+        }
         try {
             $col = $this->pdo->query("SHOW COLUMNS FROM `{$this->prefix}indexed_media` LIKE 'langs_json'");
             if ($col !== false && $col->fetch() === false) {
                 $this->pdo->exec("ALTER TABLE `{$this->prefix}indexed_media` ADD COLUMN `langs_json` VARCHAR(500) NOT NULL DEFAULT '' AFTER `seasons_json`");
             }
+            @file_put_contents($flagFile, '1');
         } catch (Throwable) {
             // Ignore if table not ready or lacks ALTER privilege
         }

@@ -9,6 +9,15 @@ defined('APP_SECURE_BOOT') or exit;
 final class HttpClient
 {
     private const MAX_RESPONSE_BYTES = 5242880; // 5 MB memory cap
+    private ?\CurlHandle $reusableHandle = null;
+
+    public function __destruct()
+    {
+        if ($this->reusableHandle !== null) {
+            curl_close($this->reusableHandle);
+            $this->reusableHandle = null;
+        }
+    }
 
     /**
      * @param array<string, string> $headers
@@ -89,10 +98,16 @@ final class HttpClient
         array $curlExtra = [],
         bool $allowRetry = true
     ): array {
-        $ch = curl_init();
-        if ($ch === false) {
-            return ['status' => 0, 'body' => '', 'headers' => []];
+        if ($this->reusableHandle === null) {
+            $init = curl_init();
+            if ($init === false) {
+                return ['status' => 0, 'body' => '', 'headers' => []];
+            }
+            $this->reusableHandle = $init;
+        } else {
+            curl_reset($this->reusableHandle);
         }
+        $ch = $this->reusableHandle;
 
         $formattedHeaders = [];
         foreach ($headers as $k => $v) {
@@ -108,7 +123,7 @@ final class HttpClient
             CURLOPT_FOLLOWLOCATION   => false,
             CURLOPT_PROTOCOLS        => CURLPROTO_HTTPS | CURLPROTO_HTTP,
             CURLOPT_TIMEOUT          => $timeout,
-            CURLOPT_CONNECTTIMEOUT   => 5,
+            CURLOPT_CONNECTTIMEOUT   => 3,
             CURLOPT_ENCODING         => '',
             CURLOPT_CUSTOMREQUEST    => strtoupper($method),
             CURLOPT_HTTPHEADER       => $formattedHeaders,
@@ -140,7 +155,6 @@ final class HttpClient
         $responseBody = curl_exec($ch);
         $curlError    = (int) curl_errno($ch);
         $statusCode   = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         // One jittered retry for idempotent GETs on transient transport errors.
         // HTTP error statuses (4xx/5xx) are never retried (curl errno is 0 there).
@@ -348,7 +362,7 @@ final class HttpClient
                     CURLOPT_FOLLOWLOCATION   => false,
                     CURLOPT_PROTOCOLS        => CURLPROTO_HTTPS | CURLPROTO_HTTP,
                     CURLOPT_TIMEOUT          => $timeout,
-                    CURLOPT_CONNECTTIMEOUT   => 5,
+                    CURLOPT_CONNECTTIMEOUT   => 3,
                     CURLOPT_ENCODING         => '',
                     CURLOPT_HTTPHEADER       => $formattedHeaders,
                     CURLOPT_USERAGENT        => 'SubtitleHub/5.0 (PHP)',

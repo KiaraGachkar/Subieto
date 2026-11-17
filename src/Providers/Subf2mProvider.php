@@ -60,9 +60,7 @@ final class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        // Cache the whole search -> detail resolution so repeated titles never
-        // repeat the two sequential 5s HTTP calls.
-        $cacheKey = 'subf2m_title_' . md5(strtolower(trim($title)) . '|' . trim($year));
+        $cacheKey = 'subf2m_title_v3_' . md5(strtolower(trim($title)) . '|' . trim($year));
         if ($this->cache !== null) {
             $cached = $this->cache->get($cacheKey);
             if (is_array($cached)) {
@@ -73,25 +71,48 @@ final class Subf2mProvider implements SubtitleProviderInterface
         $headers = $this->browserHeaders();
 
         $searchUrl = self::BASE_URL . '/subtitles/searchbytitle?query=' . urlencode(trim($title)) . '&l=';
-        $searchRes = $this->http->request('GET', $searchUrl, $headers, null, 5);
+        $searchRes = $this->http->request('GET', $searchUrl, $headers, null, 6);
         if ($searchRes['status'] < 200 || $searchRes['status'] >= 300 || $searchRes['body'] === '') {
+            $this->cache?->set($cacheKey, [], 600);
             return [];
         }
 
         $moviePath = $this->extractBestMoviePath($searchRes['body'], $title, $year);
         if ($moviePath === null) {
+            $this->cache?->set($cacheKey, [], 600);
             return [];
         }
 
-        $detailUrl = self::BASE_URL . $moviePath;
-        $detailRes = $this->http->request('GET', $detailUrl, $headers, null, 5);
-        if ($detailRes['status'] < 200 || $detailRes['status'] >= 300 || $detailRes['body'] === '') {
+        // Fetch main movie page AND dedicated Farsi/Persian language page concurrently
+        $detailReqs = [
+            'all' => ['url' => self::BASE_URL . $moviePath, 'headers' => $headers, 'rawHtml' => true],
+            'fa'  => ['url' => self::BASE_URL . $moviePath . '/farsi_persian', 'headers' => $headers, 'rawHtml' => true],
+        ];
+        $detailBatch = $this->http->getJsonBatch($detailReqs, 6);
+        $allHtml = is_array($detailBatch['all'] ?? null) ? (string) ($detailBatch['all']['_html'] ?? '') : '';
+        $faHtml  = is_array($detailBatch['fa'] ?? null) ? (string) ($detailBatch['fa']['_html'] ?? '') : '';
+
+        if ($allHtml === '' && $faHtml === '') {
+            $this->cache?->set($cacheKey, [], 600);
             return [];
         }
 
-        $items = $this->extractSubtitlesFromDetailHtml($detailRes['body']);
+        $items = [];
+        $seenUrls = [];
+        foreach ([$faHtml, $allHtml] as $pageHtml) {
+            if ($pageHtml === '') {
+                continue;
+            }
+            foreach ($this->extractSubtitlesFromDetailHtml($pageHtml) as $subItem) {
+                if (isset($seenUrls[$subItem->downloadUrl])) {
+                    continue;
+                }
+                $seenUrls[$subItem->downloadUrl] = true;
+                $items[] = $subItem;
+            }
+        }
         if ($this->cache !== null) {
-            $ttl = $items === [] ? 3600 : 86400;
+            $ttl = $items === [] ? 900 : 86400;
             $this->cache->set($cacheKey, array_map(static fn(SubtitleItem $s) => $s->toArray(), $items), $ttl);
         }
 
@@ -100,12 +121,12 @@ final class Subf2mProvider implements SubtitleProviderInterface
 
     public function resolveDownloadLink(string $detailUrl): ?string
     {
-        $res = $this->http->request('GET', $detailUrl, $this->browserHeaders(), null, 10);
+        $res = $this->http->request('GET', $detailUrl, $this->browserHeaders(), null, 8);
         if ($res['status'] < 200 || $res['status'] >= 300 || $res['body'] === '') {
             return null;
         }
 
-        if (preg_match('#href=["\'](/subtitle/download[^"\']+)["\']#i', $res['body'], $m)) {
+        if (preg_match('#href=["'](/subtitle/download[^"']+)["']#i', $res['body'], $m)) {
             return self::BASE_URL . html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
         }
 
@@ -120,21 +141,25 @@ final class Subf2mProvider implements SubtitleProviderInterface
         libxml_clear_errors();
 
         $xpath = new DOMXPath($dom);
-        $links = $xpath->query('//div[contains(@class,"search-result")]//a[contains(@href,"/subtitles/")]');
+        $links = $xpath->query('//div[contains(@class,"search-result")]//a[contains(@href,"/subtitles/")] | //ul//li//a[starts-with(@href,"/subtitles/")]');
         if (!$links || $links->length === 0) {
             return null;
         }
 
         $firstHref = null;
+        $needle = mb_strtolower(trim($title));
         foreach ($links as $a) {
             $href = trim((string) $a->getAttribute('href'));
-            if ($href === '' || str_contains($href, 'searchbytitle')) {
+            if ($href === '' || str_contains($href, 'searchbytitle') || preg_match('#^/subtitles/[^/]+/[^/]+/\d+#', $href)) {
                 continue;
             }
-            if ($firstHref === null) {
-                $firstHref = $href;
+            if (!preg_match('#^/subtitles/[a-z0-9-]+$#i', $href)) {
+                continue;
             }
             $text = trim((string) $a->textContent);
+            if ($firstHref === null && ($needle === '' || str_contains(mb_strtolower($text), $needle))) {
+                $firstHref = $href;
+            }
             if ($year !== '' && str_contains($text, $year)) {
                 return $href;
             }
@@ -159,29 +184,48 @@ final class Subf2mProvider implements SubtitleProviderInterface
             $rows = $xpath->query('//ul[contains(@class,"scrolllist")]//li');
         }
         if (!$rows || $rows->length === 0) {
+            $rows = $xpath->query('//a[contains(@href,"/subtitles/")]/ancestor::li[1]');
+        }
+        if (!$rows || $rows->length === 0) {
             return [];
         }
 
         $items = [];
+        $seen = [];
         foreach ($rows as $idx => $li) {
             $linkNode = $xpath->query('.//a[contains(@href,"/subtitles/")]', $li);
             if (!$linkNode || $linkNode->length === 0) {
                 continue;
             }
-            $href = trim((string) $linkNode->item(0)?->getAttribute('href'));
-            // Match /subtitles/{movie-slug}/{language}/{id}
-            if (!preg_match('#^/subtitles/[^/]+/([^/]+)/\d+#i', $href, $lm)) {
+            $href = '';
+            $matchedLangSeg = '';
+            foreach ($linkNode as $candidateA) {
+                $candHref = trim((string) $candidateA->getAttribute('href'));
+                if (preg_match('#^/subtitles/[^/]+/([^/]+)/\d+#i', $candHref, $lm)) {
+                    $href = $candHref;
+                    $matchedLangSeg = $lm[1];
+                    break;
+                }
+            }
+            if ($href === '' || isset($seen[$href])) {
                 continue;
             }
+            $seen[$href] = true;
 
             $langNode = $xpath->query('.//span[contains(@class,"language")]', $li);
             $langText = ($langNode && $langNode->length > 0) ? trim((string) $langNode->item(0)?->textContent) : '';
-            $lang = LanguageMap::resolve($langText !== '' ? $langText : $lm[1]);
+            $lang = LanguageMap::resolve($langText !== '' ? $langText : $matchedLangSeg);
 
-            $releaseNodes = $xpath->query('.//ul[contains(@class,"scrolllist")]//li | .//span[contains(@class,"name")]', $li);
+            $releaseNodes = $xpath->query('.//ul[contains(@class,"scrolllist")]//li | .//span[contains(@class,"name")] | .//div[contains(@class,"name")]', $li);
             $releaseName = '';
             if ($releaseNodes && $releaseNodes->length > 0) {
-                $releaseName = trim((string) $releaseNodes->item(0)?->textContent);
+                foreach ($releaseNodes as $rn) {
+                    $cand = trim(preg_replace('/\s+/', ' ', (string) $rn->textContent) ?: '');
+                    if ($cand !== '' && mb_strlen($cand) > 3) {
+                        $releaseName = $cand;
+                        break;
+                    }
+                }
             }
             if ($releaseName === '') {
                 $releaseName = trim((string) $linkNode->item(0)?->textContent);
@@ -227,7 +271,9 @@ final class Subf2mProvider implements SubtitleProviderInterface
     }
 
     /**
-     * @return \App\DTOs\SubtitleItem[]
+     * Fetches matched series season pages concurrently via curl_multi.
+     *
+     * @return SubtitleItem[]
      */
     public function searchSeries(string $title, string $year = '', int $maxPages = 5): array
     {
@@ -235,7 +281,7 @@ final class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        $cacheKey = 'subf2m_series_' . md5(strtolower(trim($title)) . '|' . trim($year));
+        $cacheKey = 'subf2m_series_v2_' . md5(strtolower(trim($title)) . '|' . trim($year));
         if ($this->cache !== null) {
             $cached = $this->cache->get($cacheKey);
             if (is_array($cached)) {
@@ -248,9 +294,10 @@ final class Subf2mProvider implements SubtitleProviderInterface
             self::BASE_URL . '/subtitles/searchbytitle?query=' . urlencode(trim($title)) . '&l=',
             $this->browserHeaders(),
             null,
-            8
+            6
         );
         if ($res['status'] < 200 || $res['status'] >= 300 || $res['body'] === '') {
+            $this->cache?->set($cacheKey, [], 600);
             return [];
         }
 
@@ -259,8 +306,9 @@ final class Subf2mProvider implements SubtitleProviderInterface
         $dom->loadHTML('<?xml encoding="UTF-8">' . $res['body'], LIBXML_NONET);
         libxml_clear_errors();
         $xpath = new DOMXPath($dom);
-        $links = $xpath->query('//div[contains(@class,"search-result")]//a[contains(@href,"/subtitles/")]');
+        $links = $xpath->query('//div[contains(@class,"search-result")]//a[contains(@href,"/subtitles/")] | //ul//li//a[starts-with(@href,"/subtitles/")]');
         if (!$links || $links->length === 0) {
+            $this->cache?->set($cacheKey, [], 600);
             return [];
         }
 
@@ -269,7 +317,10 @@ final class Subf2mProvider implements SubtitleProviderInterface
         foreach ($links as $a) {
             $href = trim((string) $a->getAttribute('href'));
             $text = mb_strtolower(trim((string) $a->textContent));
-            if ($href === '' || str_contains($href, 'searchbytitle') || !str_contains($text, $needle)) {
+            if ($href === '' || str_contains($href, 'searchbytitle') || !preg_match('#^/subtitles/[a-z0-9-]+$#i', $href)) {
+                continue;
+            }
+            if (!str_contains($text, $needle)) {
                 continue;
             }
             $paths[$href] = true;
@@ -278,17 +329,28 @@ final class Subf2mProvider implements SubtitleProviderInterface
             }
         }
         if ($paths === []) {
+            $this->cache?->set($cacheKey, [], 600);
             return [];
+        }
+
+        // Fetch all season pages in parallel!
+        $batchReqs = [];
+        foreach (array_keys($paths) as $path) {
+            $batchReqs[$path] = [
+                'url'     => self::BASE_URL . $path,
+                'headers' => $this->browserHeaders(),
+                'rawHtml' => true,
+            ];
         }
 
         $items = [];
         $seen = [];
-        foreach (array_keys($paths) as $path) {
-            $detail = $this->http->request('GET', self::BASE_URL . $path, $this->browserHeaders(), null, 8);
-            if ($detail['status'] < 200 || $detail['status'] >= 300 || $detail['body'] === '') {
+        foreach ($this->http->getJsonBatch($batchReqs, 7) as $resp) {
+            $html = is_array($resp) ? (string) ($resp['_html'] ?? '') : '';
+            if ($html === '') {
                 continue;
             }
-            foreach ($this->extractSubtitlesFromDetailHtml($detail['body']) as $item) {
+            foreach ($this->extractSubtitlesFromDetailHtml($html) as $item) {
                 if (isset($seen[$item->id])) {
                     continue;
                 }
@@ -301,15 +363,18 @@ final class Subf2mProvider implements SubtitleProviderInterface
         }
 
         if ($this->cache !== null) {
-            $this->cache->set($cacheKey, array_map(static fn(SubtitleItem $s) => $s->toArray(), $items), $items === [] ? 3600 : 86400);
+            $this->cache->set($cacheKey, array_map(static fn(SubtitleItem $s) => $s->toArray(), $items), $items === [] ? 900 : 86400);
         }
         return $items;
     }
 
+    /**
+     * @return array<string, string>
+     */
     private function browserHeaders(): array
     {
         return [
-            'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
             'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language' => 'en-US,en;q=0.9',
             'Referer'         => self::BASE_URL . '/',

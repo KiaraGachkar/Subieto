@@ -335,6 +335,7 @@ final class ProxyDownloadService
             return $binary;
         }
 
+        // UTF-16LE / UTF-16BE with BOM
         if (str_starts_with($binary, "\xFF\xFE") && function_exists('iconv')) {
             $utf8 = @iconv('UTF-16LE', 'UTF-8//IGNORE', substr($binary, 2));
             if (is_string($utf8) && $utf8 !== '') {
@@ -347,18 +348,35 @@ final class ProxyDownloadService
             }
         }
 
+        // BOM-less UTF-16LE / UTF-16BE detection (common in older Persian SRT files saved on Windows)
+        if (str_contains(substr($binary, 0, 200), "\x00") && function_exists('iconv')) {
+            $isBe = isset($binary[0]) && $binary[0] === "\x00";
+            $utf8 = @iconv($isBe ? 'UTF-16BE' : 'UTF-16LE', 'UTF-8//IGNORE', $binary);
+            if (is_string($utf8) && $utf8 !== '' && mb_check_encoding($utf8, 'UTF-8')) {
+                return "\xEF\xBB\xBF" . $utf8;
+            }
+        }
+
         if (mb_check_encoding($binary, 'UTF-8')) {
             return "\xEF\xBB\xBF" . $binary;
         }
 
+        // Legacy Windows-1256 (CP1256) Persian/Arabic encoding -> UTF-8 with BOM (required by TVs & KMPlayer/PotPlayer)
         if (function_exists('iconv')) {
             try {
-                $converted = @iconv('CP1256', 'UTF-8//IGNORE', $binary);
+                $converted = @iconv('WINDOWS-1256', 'UTF-8//IGNORE', $binary);
                 if (is_string($converted) && $converted !== '') {
                     return "\xEF\xBB\xBF" . $converted;
                 }
             } catch (Throwable) {
                 // Fall through
+            }
+        }
+
+        if (function_exists('mb_convert_encoding')) {
+            $converted = @mb_convert_encoding($binary, 'UTF-8', 'Windows-1256');
+            if (is_string($converted) && $converted !== '') {
+                return "\xEF\xBB\xBF" . $converted;
             }
         }
 

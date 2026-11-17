@@ -106,6 +106,39 @@ if ($installRequested && ($installer->isInstalled() || !$installAllowed)) {
     exit;
 }
 
+$pageCache = new StaticPageCache($basePath);
+$cacheableRoute = $requestPath === '/'
+    || $requestPath === '/search'
+    || $requestPath === '/robots.txt'
+    || str_starts_with($requestPath, '/subtitles/')
+    || str_starts_with($requestPath, '/sitemap');
+
+if ($installer->isInstalled() && in_array($requestMethod, ['GET', 'HEAD'], true) && $cacheableRoute) {
+    $bootMetaFile = $basePath . '/storage/cache/boot_meta.json';
+    $bootMeta = is_file($bootMetaFile) ? json_decode((string) @file_get_contents($bootMetaFile), true) : null;
+    if (is_array($bootMeta)) {
+        ClientIp::configureTrustedProxies((string) ($bootMeta['trusted_proxies'] ?? ''));
+        SeoHelper::configure((string) ($bootMeta['base_url'] ?? ''));
+        if (ClientIp::isHttps()) {
+            header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+        }
+        if (SeoHelper::isTrustedHost()) {
+            $locale = LocaleService::resolvePublicLocale();
+            $geo    = LocaleService::isIranVisitor() ? 'ir' : 'gl';
+            $queryParams = [];
+            parse_str((string) (parse_url($requestUri, PHP_URL_QUERY) ?? ''), $queryParams);
+            $queryPart = $queryParams !== [] ? '?' . md5(http_build_query($queryParams)) : '';
+            $hostKey  = strtolower(explode(':', (string) ($_SERVER['HTTP_HOST'] ?? ''))[0]);
+            $cacheKey = $requestPath . $queryPart . ':' . $locale . ':' . $geo . ':' . $hostKey;
+            $GLOBALS['SB_TIMES']['cache'] = microtime(true) - $GLOBALS['SB_T0'];
+            if ($pageCache->serveIfValid($cacheKey, 7200)) {
+                MetricsService::recordCachedViewFast($basePath . '/storage');
+                exit;
+            }
+        }
+    }
+}
+
 $db = null;
 $settings = null;
 $cache = null;
@@ -117,6 +150,9 @@ if ($installer->isInstalled()) {
     $prefix   = (string) ($dbConfig['prefix'] ?? 'sh_');
     $settings = new SettingsManager($db, $prefix);
     $cache    = new Cache($db, $prefix, $basePath . '/storage/cache');
+    if (!is_file($basePath . '/storage/cache/boot_meta.json')) {
+        $settings->writeBootCache();
+    }
 
     ClientIp::configureTrustedProxies((string) $settings->get('security.trusted_proxies', ''));
     SeoHelper::configure((string) $settings->get('site.base_url', ''));
@@ -127,31 +163,6 @@ if ($installer->isInstalled()) {
 }
 
 $GLOBALS['SB_TIMES']['db'] = microtime(true) - $GLOBALS['SB_T0'];
-
-$pageCache = new StaticPageCache($basePath);
-$cacheableRoute = $requestPath === '/'
-    || $requestPath === '/search'
-    || $requestPath === '/robots.txt'
-    || str_starts_with($requestPath, '/subtitles/')
-    || str_starts_with($requestPath, '/sitemap');
-if ($installer->isInstalled()
-    && in_array($requestMethod, ['GET', 'HEAD'], true)
-    && $cacheableRoute
-    && SeoHelper::isTrustedHost()
-) {
-    $locale = LocaleService::resolvePublicLocale();
-    $geo    = LocaleService::isIranVisitor() ? 'ir' : 'gl';
-    $queryParams = [];
-    parse_str((string) (parse_url($requestUri, PHP_URL_QUERY) ?? ''), $queryParams);
-    $queryPart = $queryParams !== [] ? '?' . md5(http_build_query($queryParams)) : '';
-    $hostKey  = strtolower(explode(':', (string) ($_SERVER['HTTP_HOST'] ?? ''))[0]);
-    $cacheKey = $requestPath . $queryPart . ':' . $locale . ':' . $geo . ':' . $hostKey;
-    $GLOBALS['SB_TIMES']['cache'] = microtime(true) - $GLOBALS['SB_T0'];
-    if ($pageCache->serveIfValid($cacheKey, 7200)) {
-        (new MetricsService($db, $prefix, $basePath . '/storage'))->recordCachedView();
-        exit;
-    }
-}
 
 if ($isAdminOrInstall) {
     Session::start();

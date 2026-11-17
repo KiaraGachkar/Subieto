@@ -317,7 +317,7 @@ final class AdminController extends BaseController
         }
 
         $tmdb      = new TmdbMetadataProvider($this->http, $this->settings, $this->cache);
-        $freeOs    = new FreeOpenSubtitlesProvider($this->http, $this->settings);
+        $freeOs    = new FreeOpenSubtitlesProvider($this->http, $this->settings, $this->cache);
         $podnapisi = new PodnapisiProvider($this->http, $this->settings);
         $yify      = new YifySubtitlesProvider($this->http, $this->settings);
         $subf2m    = new Subf2mProvider($this->http, $this->settings, $this->cache);
@@ -326,26 +326,30 @@ final class AdminController extends BaseController
         $metaItem = $tmdb->findByImdbId('tt1375666');
         $metaMs   = (int) round((microtime(true) - $t0) * 1000);
 
-        $osItems   = $freeOs->searchByImdbId('tt1375666', 'movie');
-        $podItems  = $podnapisi->searchByImdbId('tt1375666', 'movie');
-        $yifyItems = $yify->searchByImdbId('tt1375666', 'movie');
+        // Run all primary free provider checks concurrently in a single parallel batch
+        $batch = [];
+        if ($reqOs = $freeOs->buildSearchRequest('tt1375666', 'movie')) {
+            $batch['os'] = $reqOs;
+        }
+        if ($reqPod = $podnapisi->buildSearchRequest('tt1375666', 'movie')) {
+            $batch['pod'] = $reqPod;
+        }
+        if ($reqYify = $yify->buildSearchRequest('tt1375666', 'movie')) {
+            $batch['yify'] = $reqYify;
+        }
+        $batchRes = $this->http->getJsonBatch($batch, 7);
+
+        $osItems   = isset($batch['os']) ? $freeOs->parseSearchResponse($batchRes['os'] ?? null) : [];
+        $podItems  = isset($batch['pod']) ? $podnapisi->parseSearchResponse($batchRes['pod'] ?? null) : [];
+        $yifyItems = isset($batch['yify']) ? $yify->parseSearchResponse($batchRes['yify'] ?? null) : [];
         $s2mItems  = $subf2m->searchByTitle('Inception', '2010');
-
-        $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-        $osProbe  = $this->http->request('GET', 'https://opensubtitles-v3.strem.io/subtitles/movie/tt1375666.json', ['Accept' => 'application/json'], null, 10);
-        $s2mProbe = $this->http->request('GET', 'https://subf2m.co/subtitles/searchbytitle?query=Inception&l=', ['User-Agent' => $ua, 'Accept' => 'text/html'], null, 10);
-
-        $osDecoded = json_decode($osProbe['body'], true);
-        $osJsonError = json_last_error_msg();
-        $osParsed = is_array($osDecoded) && is_array($osDecoded['subtitles'] ?? null) ? count($osDecoded['subtitles']) : -1;
-        $s2mBody = (string) $s2mProbe['body'];
 
         echo json_encode([
             'metadata'      => ['ok' => $metaItem !== null, 'ms' => $metaMs, 'source' => $tmdb->hasTmdbKey() ? 'TMDB' : 'Cinemeta (Free)'],
-            'opensub_free'  => ['ok' => count($osItems) > 0, 'count' => count($osItems), 'status' => (int) $osProbe['status'], 'bytes' => strlen($osProbe['body']), 'json_error' => $osJsonError, 'raw_subs' => $osParsed],
+            'opensub_free'  => ['ok' => count($osItems) > 0, 'count' => count($osItems)],
             'podnapisi'     => ['ok' => count($podItems) > 0, 'count' => count($podItems)],
             'yify'          => ['ok' => count($yifyItems) > 0, 'count' => count($yifyItems)],
-            'subf2m'        => ['ok' => count($s2mItems) > 0, 'count' => count($s2mItems), 'status' => (int) $s2mProbe['status'], 'bytes' => strlen($s2mProbe['body']), 'has_search' => str_contains($s2mBody, 'search-result'), 'has_item' => str_contains($s2mBody, "class='item"), 'has_download' => str_contains($s2mBody, 'icon-download')],
+            'subf2m'        => ['ok' => count($s2mItems) > 0, 'count' => count($s2mItems)],
         ]);
     }
 

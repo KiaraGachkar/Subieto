@@ -130,6 +130,12 @@ final class SeoController extends BaseController
      */
     private function buildMediaUrls(string $base): array
     {
+        $sCacheKey = 'sitemap_urls_v1_' . md5($base);
+        $cachedUrls = $this->cache->get($sCacheKey);
+        if (is_array($cachedUrls)) {
+            return $cachedUrls;
+        }
+
         try {
             $stmt = $this->db->query(
                 "SELECT `imdb_id`, `slug`, `seasons_json`, `langs_json`, `updated_at`
@@ -211,6 +217,7 @@ final class SeoController extends BaseController
             }
         }
 
+        $this->cache->set($sCacheKey, $urls, 300);
         return $urls;
     }
 

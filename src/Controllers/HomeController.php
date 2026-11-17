@@ -42,80 +42,110 @@ final class HomeController extends BaseController
             $latestSubtitles = [];
         }
 
-        $topPicks = [];
-        try {
-            $stmt = $this->db->query(
-                "SELECT `imdb_id`, COUNT(*) AS `dl_count`
-                 FROM `{$this->prefix}download_stats`
-                 WHERE `imdb_id` <> ''
-                 GROUP BY `imdb_id`
-                 ORDER BY `dl_count` DESC LIMIT 5"
-            );
-            $topRows = $stmt !== false ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-        } catch (Throwable) {
-            $topRows = [];
-        }
-
-        $trendingById = [];
-        foreach (array_merge($trendingMovies, $trendingSeries) as $candidate) {
-            $trendingById[strtolower($candidate->imdbId)] = $candidate;
-        }
-
-        $seenTop = [];
-        foreach ($topRows as $row) {
-            $id = strtolower(trim((string) ($row['imdb_id'] ?? '')));
-            if ($id === '' || isset($seenTop[$id])) {
-                continue;
-            }
-            if (isset($trendingById[$id])) {
-                $seenTop[$id] = true;
-                $topPicks[] = $trendingById[$id];
-                continue;
-            }
+        $cachedTop = $this->cache->get('home_top_picks_v1');
+        if (is_array($cachedTop)) {
+            $topPicks = array_map(static fn(array $r): MediaItem => MediaItem::fromArray($r), $cachedTop);
+        } else {
+            $topPicks = [];
             try {
-                $metaStmt = $this->db->prepare(
-                    "SELECT `imdb_id`, `slug`, `title`, `media_type`, `year`
-                     FROM `{$this->prefix}indexed_media` WHERE `imdb_id` = :id LIMIT 1"
+                $stmt = $this->db->query(
+                    "SELECT `imdb_id`, COUNT(*) AS `dl_count`
+                     FROM `{$this->prefix}download_stats`
+                     WHERE `imdb_id` <> ''
+                     GROUP BY `imdb_id`
+                     ORDER BY `dl_count` DESC LIMIT 5"
                 );
-                $metaStmt->execute([':id' => $id]);
-                $meta = $metaStmt->fetch(PDO::FETCH_ASSOC);
+                $topRows = $stmt !== false ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
             } catch (Throwable) {
-                $meta = false;
+                $topRows = [];
             }
-            if (is_array($meta) && (string) ($meta['title'] ?? '') !== '') {
-                $seenTop[$id] = true;
-                $topPicks[] = new MediaItem(
-                    tmdbId: 0,
-                    imdbId: (string) $meta['imdb_id'],
-                    title: (string) $meta['title'],
-                    originalTitle: (string) $meta['title'],
-                    mediaType: (string) ($meta['media_type'] ?? 'movie'),
-                    year: (string) ($meta['year'] ?? ''),
-                    posterUrl: '',
-                    backdropUrl: '',
-                    overview: '',
-                    voteAverage: 0.0,
-                    voteCount: 0,
-                    slug: (string) ($meta['slug'] ?? 'title'),
-                    persianTitle: '',
-                    persianOverview: ''
-                );
-            }
-        }
 
-        if (count($topPicks) < 5) {
-            $fallback = array_merge($trendingMovies, $trendingSeries);
-            usort($fallback, static fn(MediaItem $a, MediaItem $b): int => $b->voteAverage <=> $a->voteAverage);
-            foreach ($fallback as $candidate) {
-                if (count($topPicks) >= 5) {
-                    break;
+            $trendingById = [];
+            foreach (array_merge($trendingMovies, $trendingSeries) as $candidate) {
+                $trendingById[strtolower($candidate->imdbId)] = $candidate;
+            }
+
+            $missingMetaIds = [];
+            foreach ($topRows as $row) {
+                $id = strtolower(trim((string) ($row['imdb_id'] ?? '')));
+                if ($id !== '' && !isset($trendingById[$id])) {
+                    $missingMetaIds[] = $id;
                 }
-                $key = strtolower($candidate->imdbId);
-                if (isset($seenTop[$key])) {
+            }
+
+            $indexedMetaMap = [];
+            if ($missingMetaIds !== []) {
+                try {
+                    $ph = implode(',', array_fill(0, count($missingMetaIds), '?'));
+                    $mStmt = $this->db->prepare(
+                        "SELECT `imdb_id`, `slug`, `title`, `media_type`, `year`
+                         FROM `{$this->prefix}indexed_media` WHERE `imdb_id` IN ({$ph})"
+                    );
+                    $mStmt->execute($missingMetaIds);
+                    foreach ($mStmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $mRow) {
+                        $indexedMetaMap[strtolower((string) $mRow['imdb_id'])] = $mRow;
+                    }
+                } catch (Throwable) {
+                    $indexedMetaMap = [];
+                }
+            }
+
+            $seenTop = [];
+            foreach ($topRows as $row) {
+                $id = strtolower(trim((string) ($row['imdb_id'] ?? '')));
+                if ($id === '' || isset($seenTop[$id])) {
                     continue;
                 }
-                $seenTop[$key] = true;
-                $topPicks[] = $candidate;
+                if (isset($trendingById[$id])) {
+                    $seenTop[$id] = true;
+                    $topPicks[] = $trendingById[$id];
+                    continue;
+                }
+                $meta = $indexedMetaMap[$id] ?? null;
+                if (is_array($meta) && (string) ($meta['title'] ?? '') !== '') {
+                    $seenTop[$id] = true;
+                    $posterUrl = '';
+                    $cMeta = $this->cache->get("cinemeta_imdb_{$id}");
+                    if (is_array($cMeta) && !empty($cMeta['posterUrl'])) {
+                        $posterUrl = (string) $cMeta['posterUrl'];
+                    }
+                    $topPicks[] = new MediaItem(
+                        tmdbId: 0,
+                        imdbId: (string) $meta['imdb_id'],
+                        title: (string) $meta['title'],
+                        originalTitle: (string) $meta['title'],
+                        mediaType: (string) ($meta['media_type'] ?? 'movie'),
+                        year: (string) ($meta['year'] ?? ''),
+                        posterUrl: $posterUrl,
+                        backdropUrl: '',
+                        overview: '',
+                        voteAverage: 0.0,
+                        voteCount: 0,
+                        slug: (string) ($meta['slug'] ?? 'title'),
+                        persianTitle: '',
+                        persianOverview: ''
+                    );
+                }
+            }
+
+            if (count($topPicks) < 5) {
+                $fallback = array_merge($trendingMovies, $trendingSeries);
+                usort($fallback, static fn(MediaItem $a, MediaItem $b): int => $b->voteAverage <=> $a->voteAverage);
+                foreach ($fallback as $candidate) {
+                    if (count($topPicks) >= 5) {
+                        break;
+                    }
+                    $key = strtolower($candidate->imdbId);
+                    if (isset($seenTop[$key])) {
+                        continue;
+                    }
+                    $seenTop[$key] = true;
+                    $topPicks[] = $candidate;
+                }
+            }
+
+            if ($topPicks !== []) {
+                $this->cache->set('home_top_picks_v1', array_map(static fn(MediaItem $m): array => $m->toArray(), $topPicks), 600);
             }
         }
 

@@ -48,7 +48,7 @@ final class PodnapisiProvider implements SubtitleProviderInterface
 
         return [
             'url'     => self::SEARCH_URL . '?' . $query,
-            'headers' => ['Accept' => 'application/xml,text/xml'],
+            'headers' => $this->browserHeaders(),
             'rawHtml' => true,
         ];
     }
@@ -69,7 +69,7 @@ final class PodnapisiProvider implements SubtitleProviderInterface
             return [];
         }
 
-        $res = $this->http->request('GET', $req['url'], $req['headers'], null, 10);
+        $res = $this->http->request('GET', $req['url'], $req['headers'], null, 12);
         if ($res['status'] < 200 || $res['status'] >= 300 || $res['body'] === '') {
             return [];
         }
@@ -135,6 +135,19 @@ final class PodnapisiProvider implements SubtitleProviderInterface
         }
 
         return $items;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function browserHeaders(): array
+    {
+        return [
+            'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            'Accept'          => 'application/xml,text/xml,application/xhtml+xml,*/*;q=0.8',
+            'Accept-Language' => 'en-US,en;q=0.9',
+            'Referer'         => self::BASE_URL . '/',
+        ];
     }
 
     private function detectQuality(string $release): string
