@@ -28,13 +28,12 @@ jobs:
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.CPANEL_HOST }}
-          username: ${{ secrets.CPANEL_USER }}
-          password: ${{ secrets.CPANEL_PASSWORD }}
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps            # اگر هاست FTPS ندارد: ftp
           port: 21
           local-dir: ./
-          server-dir: ${{ secrets.CPANEL_DIR }}   # مثلا /subieto/
           exclude: |
             **/.git*
             **/.git*/**
