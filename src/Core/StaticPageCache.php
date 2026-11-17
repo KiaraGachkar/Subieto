@@ -65,6 +65,12 @@ final class StaticPageCache
             $remainingTtl = $fallbackTtl - ($now - $mtime);
         }
 
+        // Cached HTML contains the nonce from the request that generated it, but every
+        // request sends a fresh CSP nonce. Re-stamp it or all inline scripts get blocked.
+        if (defined('CSP_NONCE')) {
+            $html = preg_replace('/\bnonce="[^"]*"/', 'nonce="' . CSP_NONCE . '"', $html) ?? $html;
+        }
+
         self::emitCacheHeaders(min($remainingTtl, 1800));
         header('X-Page-Cache: HIT');
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'HEAD') {

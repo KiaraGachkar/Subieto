@@ -177,18 +177,28 @@ $hueColor = static function (string $code): string {
     <!-- Language Pills + Release Search + Quality Filter + Match My Video File -->
     <div class="tools">
         <div class="pills">
+            <label class="field langsearch" style="height:30px;min-width:170px">
+                <svg viewBox="0 0 22 22" fill="none" aria-hidden="true"><circle cx="9.6" cy="9.6" r="7" stroke="currentColor" stroke-width="1.7"/><path d="M14.8 14.8l4.6 4.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                <input
+                    type="text"
+                    x-model="langSearch"
+                    aria-label="<?= $isFa ? 'جستجوی زبان' : 'Search languages' ?>"
+                    placeholder="<?= $isFa ? 'جستجوی زبان...' : 'Search languages…' ?>"
+                >
+            </label>
             <button type="button" class="lchip" :class="lang === 'all' ? 'lchip on' : 'lchip'" @click="lang = 'all'">
-                <span>All languages</span>
+                <span><?= $isFa ? 'همه زبان‌ها' : 'All languages' ?></span>
                 <u><?= count($subtitles) ?></u>
             </button>
             <?php foreach ($langCounts as $lc): ?>
-                <button type="button" class="lchip" :class="lang === <?= View::e(json_encode($lc['code'])) ?> ? 'lchip on' : 'lchip'" @click="lang = <?= View::e(json_encode($lc['code'])) ?>">
+                <button type="button" class="lchip" data-lang-search="<?= View::e(mb_strtolower($lc['label'] . ' ' . $lc['code'])) ?>" x-show="langChipVisible($el)" :class="lang === <?= View::e(json_encode($lc['code'])) ?> ? 'lchip on' : 'lchip'" @click="lang = <?= View::e(json_encode($lc['code'])) ?>">
                     <i style="background:<?= $hueColor($lc['code']) ?>"></i>
                     <span><?= View::e($lc['label']) ?></span>
                     <u><?= $lc['count'] ?></u>
                 </button>
             <?php endforeach; ?>
-            <span class="subcount mono"><?= count($subtitles) ?> subtitles</span>
+            <span class="subcount mono" x-show="hasVisibleLangs"><?= count($subtitles) ?> subtitles</span>
+            <span class="subcount mono" x-show="!hasVisibleLangs" x-cloak><?= $isFa ? 'زبانی یافت نشد' : 'No languages found' ?></span>
         </div>
 
         <div class="tools__r">
@@ -395,6 +405,7 @@ $hueColor = static function (string $code): string {
     function subtitlePage() {
         return {
             lang: <?= json_encode($initialLang) ?>,
+            langSearch: '',
             releaseFilter: '',
             qualityFilter: 'all',
             episodeFilter: 'all',
@@ -407,6 +418,16 @@ $hueColor = static function (string $code): string {
                 this.$watch('lang', () => this.ensureQualityFilter());
                 this.$watch('episodeFilter', () => this.ensureQualityFilter());
                 this.$watch('releaseFilter', () => this.ensureQualityFilter());
+            },
+            langChipVisible(el) {
+                const q = this.langSearch.trim().toLowerCase();
+                return q === '' || (el.dataset.langSearch || '').includes(q);
+            },
+            get hasVisibleLangs() {
+                const q = this.langSearch.trim().toLowerCase();
+                if (q === '') return true;
+                return Array.from(document.querySelectorAll('.pills .lchip[data-lang-search]'))
+                    .some(el => (el.dataset.langSearch || '').includes(q));
             },
             get availableQualities() {
                 const rows = document.querySelectorAll('.srow[data-quality]');

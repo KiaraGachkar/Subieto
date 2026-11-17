@@ -333,7 +333,7 @@ $baseP    = $urlParts['path'] ?? '/';
                     if (this.abortCtrl) {
                         this.abortCtrl.abort();
                     }
-                    const sKey = 'sb_ac_' + q.toLowerCase();
+                        const sKey = 'sb_ac_v2_' + q.toLowerCase();
                     try {
                         const hit = sessionStorage.getItem(sKey);
                         if (hit) {

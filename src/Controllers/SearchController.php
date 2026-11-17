@@ -90,7 +90,7 @@ final class SearchController extends BaseController
             return;
         }
 
-        $acCacheKey = 'ac_v1_' . md5(mb_strtolower($query));
+        $acCacheKey = 'ac_v2_' . md5(mb_strtolower($query));
         $cachedPayload = $this->cache->get($acCacheKey);
         if (is_array($cachedPayload)) {
             echo json_encode($cachedPayload, JSON_UNESCAPED_UNICODE);
@@ -196,6 +196,23 @@ final class SearchController extends BaseController
         }
 
         $list = array_values($merged);
+
+        // Local indexed_media rows carry no poster URL, so titles the live API did not
+        // return would render an empty thumbnail. Fill them from the metadata provider.
+        foreach ($list as $item) {
+            if ($item->posterUrl !== '') {
+                continue;
+            }
+            try {
+                $detail = $tmdb->findByImdbId($item->imdbId);
+            } catch (Throwable) {
+                continue;
+            }
+            if ($detail !== null && $detail->posterUrl !== '') {
+                $item->posterUrl = $detail->posterUrl;
+            }
+        }
+
         $needle = mb_strtolower($titleQuery);
 
         usort($list, static function (MediaItem $a, MediaItem $b) use ($needle, $yearFilter): int {
