@@ -94,9 +94,6 @@ final class SubtitleRepository
         }
     }
 
-    /**
-     * @return SubtitleItem[]
-     */
     public function getByImdbId(string $imdbId, ?int $season = null): array
     {
         $cleanImdb = strtolower(trim($imdbId));
@@ -154,12 +151,6 @@ final class SubtitleRepository
         }
     }
 
-
-    /**
-     * Returns map of season_number => active subtitle count for a TV series.
-     *
-     * @return array<int, int>
-     */
     public function getSeasonCounts(string $imdbId): array
     {
         $cleanImdb = strtolower(trim($imdbId));
@@ -185,9 +176,6 @@ final class SubtitleRepository
         }
     }
 
-    /**
-     * @param SubtitleItem[] $items
-     */
     public function saveItems(string $imdbId, array $items, bool $markComplete = false): int
     {
         $cleanImdb = strtolower(trim($imdbId));
@@ -236,7 +224,6 @@ final class SubtitleRepository
                 }
             }
 
-            // Update sync status
             $cntStmt = $this->pdo->prepare(
                 "SELECT COUNT(*) AS `tot`, SUM(CASE WHEN `language_code` = 'fa' THEN 1 ELSE 0 END) AS `fa_cnt`
                  FROM `{$this->prefix}subtitles` WHERE `imdb_id` = :imdb AND `is_active` = 1"
@@ -283,13 +270,9 @@ final class SubtitleRepository
             $stmt = $this->pdo->prepare("UPDATE `{$this->prefix}subtitles` SET `is_active` = 0 WHERE `download_url` = :dl");
             $stmt->execute([':dl' => $downloadUrl]);
         } catch (Throwable) {
-            // Ignore
         }
     }
 
-    /**
-     * @return array{total: int, persian: int, titles: int}
-     */
     public function getArchiveStats(): array
     {
         try {
@@ -312,17 +295,10 @@ final class SubtitleRepository
         }
     }
 
-    /**
-     * Picks next batch of titles needing archive completion (prioritizing missing Persian demand,
-     * incomplete series, and stale/unsynced indexed media).
-     *
-     * @return string[]
-     */
     public function getNextSyncQueue(int $limit = 5): array
     {
         $queue = [];
         try {
-            // 1. High-demand titles missing Persian subtitles
             $s1 = $this->pdo->prepare(
                 "SELECT m.`imdb_id`
                  FROM `{$this->prefix}missing_subtitles` m
@@ -338,7 +314,6 @@ final class SubtitleRepository
                 $queue[(string) $id] = true;
             }
 
-            // 2. Indexed titles never synced or marked incomplete
             if (count($queue) < $limit) {
                 $rem = $limit - count($queue);
                 $s2 = $this->pdo->prepare(
@@ -357,18 +332,11 @@ final class SubtitleRepository
                 }
             }
         } catch (Throwable) {
-            // Ignore
         }
 
         return array_slice(array_keys($queue), 0, $limit);
     }
 
-    /**
-     * Performs a thorough, deep sync for a single IMDb title (used by Cron and Admin manual sync).
-     * Starts with Subzone.ir (primary Subf2m mirror) and fails over to Subf2m.co + Subkade.ir.
-     *
-     * @return array{imdb_id: string, title: string, fetched: int, persian: int}
-     */
     public function syncSingleTitle(
         string $imdbId,
         HttpClient $http,
@@ -414,12 +382,10 @@ final class SubtitleRepository
                     $all[] = $item;
                 }
             }
-            // Primary mirror: Subzone.ir
             $szSubs = $subzone->isConfigured() ? $subzone->searchSeries($media->title, $media->year, 15, null) : [];
             foreach ($szSubs as $item) {
                 $all[] = $item;
             }
-            // Failover: Subf2m.co if Subzone returned few/no results
             if (count($szSubs) < 3 && $subf2m->isConfigured()) {
                 foreach ($subf2m->searchSeries($media->title, $media->year, 15, null) as $item) {
                     $all[] = $item;
@@ -431,12 +397,10 @@ final class SubtitleRepository
                 }
             }
         } else {
-            // Primary mirror: Subzone.ir
             $szSubs = $subzone->isConfigured() ? $subzone->searchByTitle($media->title, $media->year) : [];
             foreach ($szSubs as $item) {
                 $all[] = $item;
             }
-            // Failover: Subf2m.co if Subzone returned < 2 results
             if (count($szSubs) < 2 && $subf2m->isConfigured()) {
                 foreach ($subf2m->searchByTitle($media->title, $media->year) as $item) {
                     $all[] = $item;

@@ -17,10 +17,6 @@ defined('APP_SECURE_BOOT') or exit;
 
 class Subf2mProvider implements SubtitleProviderInterface
 {
-    /**
-     * Subf2m and Subzone share the same site structure (Subzone mirrors Subf2m), so one
-     * scraper serves both; the subclass only supplies a different base URL / identity.
-     */
     public function __construct(
         private readonly HttpClient $http,
         private readonly SettingsManager $settings,
@@ -57,9 +53,6 @@ class Subf2mProvider implements SubtitleProviderInterface
         return [];
     }
 
-    /**
-     * @return SubtitleItem[]
-     */
     public function searchByTitle(string $title, string $year = ''): array
     {
         if (!$this->isConfigured() || trim($title) === '' || !class_exists(DOMDocument::class)) {
@@ -75,7 +68,6 @@ class Subf2mProvider implements SubtitleProviderInterface
         }
 
         $headers = $this->browserHeaders();
-
         $searchUrl = $this->baseUrl . '/subtitles/searchbytitle?query=' . urlencode(trim($title)) . '&l=';
         $searchRes = $this->http->request('GET', $searchUrl, $headers, null, 6);
         if ($searchRes['status'] < 200 || $searchRes['status'] >= 300 || $searchRes['body'] === '') {
@@ -89,7 +81,6 @@ class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        // Fetch main movie page AND dedicated Farsi/Persian language page concurrently
         $detailReqs = [
             'all' => ['url' => $this->baseUrl . $moviePath, 'headers' => $headers, 'rawHtml' => true],
             'fa'  => ['url' => $this->baseUrl . $moviePath . '/farsi_persian', 'headers' => $headers, 'rawHtml' => true],
@@ -174,9 +165,6 @@ class Subf2mProvider implements SubtitleProviderInterface
         return $firstHref;
     }
 
-    /**
-     * @return SubtitleItem[]
-     */
     private function extractSubtitlesFromDetailHtml(string $html): array
     {
         libxml_use_internal_errors(true);
@@ -276,13 +264,6 @@ class Subf2mProvider implements SubtitleProviderInterface
         return $items;
     }
 
-    /**
-     * Fetches matched series season pages (both main page and /farsi_persian) concurrently via curl_multi.
-     * Matches Subf2m & Subzone exact search HTML structure:
-     * <li><div><a href="/subtitles/game-of-thrones-seventh-season">Game of Thrones - Seventh Season (2017)</a></div></li>
-     *
-     * @return SubtitleItem[]
-     */
     public function searchSeries(string $title, string $year = '', int $maxPages = 20, ?int $season = null): array
     {
         if (!$this->isConfigured() || trim($title) === '' || !class_exists(DOMDocument::class)) {
@@ -315,7 +296,6 @@ class Subf2mProvider implements SubtitleProviderInterface
         libxml_clear_errors();
         $xpath = new DOMXPath($dom);
 
-        // Query all `/subtitles/<slug>` links anywhere in the search results list
         $links = $xpath->query('//ul//li//a[starts-with(@href,"/subtitles/")]');
         if (!$links || $links->length === 0) {
             $this->cache?->set($cacheKey, [], 600);
@@ -325,8 +305,8 @@ class Subf2mProvider implements SubtitleProviderInterface
         $normTitle = $this->normalizeTitleForMatch($title);
         $titleWords = array_values(array_filter(explode(' ', $normTitle), static fn(string $w): bool => strlen($w) >= 2));
 
-        $matchedSeasonPaths = []; // path => ?int season
-        $seriesHubPaths = [];     // path => true (e.g. /subtitles/game-of-thrones)
+        $matchedSeasonPaths = [];
+        $seriesHubPaths = [];
 
         foreach ($links as $a) {
             $href = trim((string) $a->getAttribute('href'));
@@ -337,7 +317,6 @@ class Subf2mProvider implements SubtitleProviderInterface
             $slug = strtolower($hm[1]);
             $normText = $this->normalizeTitleForMatch($text);
 
-            // Check title relevance (handles "The Office" vs "The Office (US)", colons, hyphens, etc.)
             $matchesTitle = ($normTitle !== '' && str_contains($normText, $normTitle));
             if (!$matchesTitle && count($titleWords) >= 2) {
                 $hits = 0;
@@ -352,7 +331,6 @@ class Subf2mProvider implements SubtitleProviderInterface
                 continue;
             }
 
-            // Exclude unrelated spin-offs / documentaries when searching main series unless query explicitly includes them
             if (!str_contains($normTitle, 'story so far') && str_contains($normText, 'story so far')) {
                 continue;
             }
@@ -363,13 +341,10 @@ class Subf2mProvider implements SubtitleProviderInterface
                     $matchedSeasonPaths[$href] = $detectedSeason;
                 }
             } else {
-                // Complete series or main hub page
                 $seriesHubPaths[$href] = true;
             }
         }
 
-        // If user requested a specific season and we found its exact season URL(s), fetch those directly!
-        // Otherwise fetch all discovered season URLs + hub URLs.
         $targetPaths = $matchedSeasonPaths;
         if ($targetPaths === [] || $season === null) {
             foreach ($seriesHubPaths as $hPath => $_) {
@@ -384,11 +359,9 @@ class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        // Sort seasons ascending (1, 2, 3...)
         uasort($targetPaths, static fn(?int $a, ?int $b): int => ($a ?? 999) <=> ($b ?? 999));
         $targetPaths = array_slice($targetPaths, 0, max($maxPages, 25), true);
 
-        // Fetch both main season page AND `/farsi_persian` page concurrently for maximum Persian + English coverage
         $batchReqs = [];
         foreach ($targetPaths as $path => $sNum) {
             $batchReqs['all|' . $path] = [
@@ -424,7 +397,6 @@ class Subf2mProvider implements SubtitleProviderInterface
         };
 
         $batchResponses = $this->http->getJsonBatch($batchReqs, 8);
-        // Process Farsi pages first so Persian subtitles are never truncated
         uksort($batchResponses, static fn(string $a, string $b): int => (str_starts_with($a, 'fa|') ? 0 : 1) <=> (str_starts_with($b, 'fa|') ? 0 : 1));
 
         foreach ($batchResponses as $reqKey => $resp) {
@@ -436,7 +408,6 @@ class Subf2mProvider implements SubtitleProviderInterface
             $pageSeason = $targetPaths[$path] ?? null;
             $added = $collect($html, $pageSeason);
 
-            // If this was a hub page with no direct subtitles, extract season links from inside it
             if ($added === 0 && $pageSeason === null) {
                 $slug = substr($path, strlen('/subtitles/'));
                 foreach ($this->extractSeasonLinks($html, $slug) as $sPath => $sNum) {
@@ -447,7 +418,6 @@ class Subf2mProvider implements SubtitleProviderInterface
             }
         }
 
-        // Step 2: if hub pages revealed season links that weren't in the initial search results, fetch them now
         if ($discoveredExtraSeasons !== []) {
             asort($discoveredExtraSeasons);
             $discoveredExtraSeasons = array_slice($discoveredExtraSeasons, 0, 20, true);
@@ -508,10 +478,6 @@ class Subf2mProvider implements SubtitleProviderInterface
         return null;
     }
 
-    /**
-     * Season number from a Subf2m slug such as "game-of-thrones-first-season-1",
-     * "game-of-thrones-sixth-season-tv-2016", "the-bear-3rd-season" or "show-season-4".
-     */
     private function seasonFromSlug(string $slug): ?int
     {
         static $words = [
@@ -533,11 +499,6 @@ class Subf2mProvider implements SubtitleProviderInterface
         return null;
     }
 
-    /**
-     * Season links on a series page: "/subtitles/<series>-<nth>-season" => season number.
-     *
-     * @return array<string, int>
-     */
     private function extractSeasonLinks(string $html, string $pageSlug): array
     {
         $base = preg_replace('/-(?:[a-z]+|\d{1,2}(?:st|nd|rd|th))-season.*$/', '', strtolower($pageSlug)) ?: strtolower($pageSlug);
@@ -564,9 +525,6 @@ class Subf2mProvider implements SubtitleProviderInterface
         return $out;
     }
 
-    /**
-     * @return array<string, string>
-     */
     private function browserHeaders(): array
     {
         return [
