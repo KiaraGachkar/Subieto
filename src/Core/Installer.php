@@ -189,6 +189,8 @@ final class Installer
                 'providers.podnapisi_enabled'    => '1',
                 'providers.yify_enabled'         => '1',
                 'providers.subf2m_enabled'       => '1',
+                'providers.subzone_enabled'      => '1',
+                'providers.subkade_enabled'      => '1',
                 'providers.priority_languages'   => 'en,fa,ar,es,fr,tr',
                 'seo.movie_title_tpl'         => 'دانلود زیرنویس فارسی {title} {fa_title} ({year}) | مستقیم و رایگان',
                 'seo.google_verification'     => '',

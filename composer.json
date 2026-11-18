@@ -1,5 +1,5 @@
 {
-    "name": "subieto/v42-fix-test",
+    "name": "subieto/v46-subkade-brand",
     "description": "PHP 8.1+ Bilingual Subtitle Aggregator with Hardened Security, Geo-Targeted Ads, Programmatic SEO & Partitioned Static Cache",
     "type": "project",
     "require": {

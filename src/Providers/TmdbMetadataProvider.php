@@ -39,6 +39,72 @@ final class TmdbMetadataProvider
         return trim((string) $this->settings->get('apis.tmdb_api_key', '')) !== '';
     }
 
+    public function getSeasonCount(int $tmdbId, string $imdbId): int
+    {
+        $cleanImdb = strtolower(trim($imdbId));
+        $cacheKey  = "tv_seasons_cnt_v1_{$tmdbId}_{$cleanImdb}";
+        $cached    = $this->cache->get($cacheKey);
+        if (is_int($cached) && $cached > 0) {
+            return $cached;
+        }
+
+        $maxSeason = 0;
+
+        if ($this->hasTmdbKey() && $tmdbId > 0) {
+            $apiKey = trim((string) $this->settings->get('apis.tmdb_api_key'));
+            $data = $this->http->getJson(self::BASE_URL . "/tv/{$tmdbId}?api_key=" . urlencode($apiKey) . "&language=en-US", [], 6);
+            if (is_array($data)) {
+                $num = (int) ($data['number_of_seasons'] ?? 0);
+                if ($num > 0) {
+                    $maxSeason = $num;
+                }
+                if ($maxSeason === 0 && !empty($data['seasons']) && is_array($data['seasons'])) {
+                    foreach ($data['seasons'] as $s) {
+                        $sn = (int) ($s['season_number'] ?? 0);
+                        if ($sn > $maxSeason) {
+                            $maxSeason = $sn;
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($maxSeason === 0 && preg_match('/^tt\d{5,10}$/', $cleanImdb)) {
+            $epCacheKey = "cinemeta_eps_{$cleanImdb}";
+            $episodeIds = $this->cache->get($epCacheKey);
+            if (!is_array($episodeIds)) {
+                $meta = $this->http->getJson(self::CINEMETA_URL . '/meta/series/' . $cleanImdb . '.json', [], 7);
+                $videos = is_array($meta) ? ($meta['meta']['videos'] ?? []) : [];
+                $episodeIds = [];
+                if (is_array($videos)) {
+                    foreach ($videos as $video) {
+                        $id = strtolower(trim((string) (is_array($video) ? ($video['id'] ?? '') : '')));
+                        if (preg_match('/^tt\d+:\d{1,3}:\d{1,4}$/', $id)) {
+                            $episodeIds[$id] = true;
+                        }
+                    }
+                }
+                $episodeIds = array_keys($episodeIds);
+                if ($episodeIds !== []) {
+                    $this->cache->set($epCacheKey, $episodeIds, 86400 * 7);
+                }
+            }
+            foreach ($episodeIds as $epId) {
+                $parts = explode(':', (string) $epId);
+                $sn = (int) ($parts[1] ?? 0);
+                if ($sn > $maxSeason && $sn <= 100) {
+                    $maxSeason = $sn;
+                }
+            }
+        }
+
+        if ($maxSeason > 0) {
+            $this->cache->set($cacheKey, $maxSeason, 86400 * 7);
+        }
+
+        return $maxSeason;
+    }
+
     /**
      * @return MediaItem[]
      */

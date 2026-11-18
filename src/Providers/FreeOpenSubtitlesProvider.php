@@ -37,13 +37,12 @@ final class FreeOpenSubtitlesProvider implements SubtitleProviderInterface
 
     public function buildSearchRequest(string $imdbId, string $mediaType = 'movie'): ?array
     {
-        if (!$this->isConfigured()) {
+        if (!$this->isConfigured() || $mediaType === 'tv') {
             return null;
         }
 
-        $type = $mediaType === 'tv' ? 'series' : 'movie';
         return [
-            'url'     => self::BASE_URL . "/{$type}/" . urlencode(strtolower($imdbId)) . '.json',
+            'url'     => self::BASE_URL . '/movie/' . urlencode(strtolower($imdbId)) . '.json',
             'headers' => $this->apiHeaders(),
         ];
     }
@@ -168,6 +167,11 @@ final class FreeOpenSubtitlesProvider implements SubtitleProviderInterface
                 $episodeIds,
                 static fn(string $id): bool => (int) (explode(':', $id)[1] ?? -1) === $season
             ));
+            if ($episodeIds === []) {
+                for ($ep = 1; $ep <= 12; $ep++) {
+                    $episodeIds[] = "{$cleanImdb}:{$season}:{$ep}";
+                }
+            }
             $episodeIds = array_slice($episodeIds, 0, 60);
         } else {
             // All seasons: round-robin across seasons (E1 of every season, then E2, ...)

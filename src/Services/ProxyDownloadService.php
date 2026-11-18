@@ -8,6 +8,8 @@ use App\Core\HttpClient;
 use App\Core\SettingsManager;
 use App\Providers\OpenSubtitlesProvider;
 use App\Providers\Subf2mProvider;
+use App\Providers\SubzoneProvider;
+use App\Providers\SubkadeProvider;
 use PDO;
 use Throwable;
 use ZipArchive;
@@ -254,6 +256,24 @@ final class ProxyDownloadService
             return null;
         }
 
+        if (str_starts_with($rawUrl, 'subzone://')) {
+            $detailUrl = substr($rawUrl, strlen('subzone://'));
+            if (preg_match('#^https://(?:www\.)?subzone\.ir/#i', $detailUrl)) {
+                $subzone = new SubzoneProvider($this->http, $this->settings);
+                return $subzone->resolveDownloadLink($detailUrl);
+            }
+            return null;
+        }
+
+        if (str_starts_with($rawUrl, 'subkade://')) {
+            $detailUrl = substr($rawUrl, strlen('subkade://'));
+            if (preg_match('#^https://(?:www\.)?subkade\.ir/#i', $detailUrl)) {
+                $subkade = new SubkadeProvider($this->http, $this->settings);
+                return $subkade->resolveDownloadLink($detailUrl);
+            }
+            return null;
+        }
+
         return filter_var($rawUrl, FILTER_VALIDATE_URL) ? $rawUrl : null;
     }
 
@@ -280,7 +300,7 @@ final class ProxyDownloadService
         }
 
         $matched = false;
-        foreach (['subdl.com', 'opensubtitles.com', 'opensubtitles.org', 'strem.io', 'yifysubtitles.ch', 'subf2m.co', 'podnapisi.net'] as $suffix) {
+        foreach (['subdl.com', 'opensubtitles.com', 'opensubtitles.org', 'strem.io', 'yifysubtitles.ch', 'subf2m.co', 'podnapisi.net', 'subzone.ir', 'subkade.ir'] as $suffix) {
             if ($host === $suffix || str_ends_with($host, '.' . $suffix)) {
                 $matched = true;
                 break;
@@ -392,14 +412,24 @@ final class ProxyDownloadService
 
     private function brandFileName(string $name): string
     {
-        $providers = 'yifysubtitles|yify|yts|subf2m|subdl|opensubtitles|podnapisi|addic7ed|tvsubtitles';
-        if (!preg_match('/' . $providers . '/i', $name)) {
-            return $name;
-        }
-
         $site = preg_replace('/[^a-zA-Z0-9_-]+/', '', (string) $this->settings->get('site.title', 'Subieto')) ?: 'Subieto';
-        $name = preg_replace('/\[[^\]]*(?:' . $providers . ')[^\]]*\]/i', $site, $name) ?? $name;
-        $name = preg_replace('/(?<![A-Za-z0-9])(?:' . $providers . ')(?![A-Za-z0-9])/i', $site, $name) ?? $name;
-        return preg_replace('/[._-]{2,}/', '_', $name) ?? $name;
+        
+        // Comprehensive regex to catch any other Persian/English subtitle site names or provider tags
+        $foreignSites = 'subkade|subzone|subf2m|subdl|yifysubtitles|yify|yts|opensubtitles|podnapisi|addic7ed|tvsubtitles|tsubtitle|worldsub|animesub|farsisubtitle|subpars';
+        
+        // Remove bracketed or dotted/dashed references to other sites
+        $name = preg_replace('/[\[\(\{][^\]\)\}]*(?:' . $foreignSites . ')[^\]\)\}]*[\]\)\}]/ui', '', $name) ?? $name;
+        $name = preg_replace('/(?<![A-Za-z0-9])(?:' . $foreignSites . ')(?![A-Za-z0-9])/ui', '', $name) ?? $name;
+        
+        // Append site brand cleanly if not already present
+        $pathInfo = pathinfo($name);
+        $filename = $pathInfo['filename'] ?? 'subtitle';
+        $ext = isset($pathInfo['extension']) ? '.' . $pathInfo['extension'] : '.srt';
+        
+        if (!str_contains(strtolower($filename), strtolower($site))) {
+            $filename = rtrim($filename, '._-') . '_' . $site;
+        }
+        
+        return preg_replace('/[._-]{2,}/', '_', $filename) . $ext;
     }
 }

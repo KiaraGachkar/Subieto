@@ -10,6 +10,8 @@ use App\Core\Session;
 use App\Providers\FreeOpenSubtitlesProvider;
 use App\Providers\PodnapisiProvider;
 use App\Providers\Subf2mProvider;
+use App\Providers\SubzoneProvider;
+use App\Providers\SubkadeProvider;
 use App\Providers\TmdbMetadataProvider;
 use App\Providers\YifySubtitlesProvider;
 use App\Services\LocaleService;
@@ -193,6 +195,8 @@ final class AdminController extends BaseController
             'providers.podnapisi_enabled'      => isset($_POST['podnapisi_enabled']) ? '1' : '0',
             'providers.yify_enabled'           => isset($_POST['yify_enabled']) ? '1' : '0',
             'providers.subf2m_enabled'         => isset($_POST['subf2m_enabled']) ? '1' : '0',
+            'providers.subzone_enabled'        => isset($_POST['subzone_enabled']) ? '1' : '0',
+            'providers.subkade_enabled'        => isset($_POST['subkade_enabled']) ? '1' : '0',
             'providers.priority_languages'     => strtolower(trim($priorityLangs, ',')),
             'seo.movie_title_tpl'              => trim((string) ($_POST['seo_movie_title_tpl'] ?? '')),
             'seo.google_verification'          => trim((string) ($_POST['seo_google_verification'] ?? '')),
@@ -323,6 +327,8 @@ final class AdminController extends BaseController
         $podnapisi = new PodnapisiProvider($this->http, $this->settings);
         $yify      = new YifySubtitlesProvider($this->http, $this->settings);
         $subf2m    = new Subf2mProvider($this->http, $this->settings, $this->cache);
+        $subzone   = new SubzoneProvider($this->http, $this->settings, $this->cache);
+        $subkade   = new SubkadeProvider($this->http, $this->settings, $this->cache);
 
         try {
             $t0 = microtime(true);
@@ -346,6 +352,8 @@ final class AdminController extends BaseController
             $podItems  = isset($batch['pod']) ? $podnapisi->parseSearchResponse($batchRes['pod'] ?? null) : [];
             $yifyItems = isset($batch['yify']) ? $yify->parseSearchResponse($batchRes['yify'] ?? null) : [];
             $s2mItems  = $subf2m->searchByTitle('Inception', '2010');
+            $szItems   = $subzone->searchByTitle('Inception', '2010', 'movie', null);
+            $skItems   = $subkade->searchByTitle('Inception', '2010', 'movie', null);
 
             echo json_encode([
                 'metadata'      => ['ok' => $metaItem !== null, 'ms' => $metaMs, 'source' => $tmdb->hasTmdbKey() ? 'TMDB' : 'Cinemeta (Free)'],
@@ -353,6 +361,8 @@ final class AdminController extends BaseController
                 'podnapisi'     => ['ok' => count($podItems) > 0, 'count' => count($podItems)],
                 'yify'          => ['ok' => count($yifyItems) > 0, 'count' => count($yifyItems)],
                 'subf2m'        => ['ok' => count($s2mItems) > 0, 'count' => count($s2mItems)],
+                'subzone'       => ['ok' => count($szItems) > 0, 'count' => count($szItems)],
+                'subkade'       => ['ok' => count($skItems) > 0, 'count' => count($skItems)],
             ]);
         } catch (\Throwable $e) {
             error_log('[test-apis] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());

@@ -10,6 +10,8 @@ use App\Providers\OpenSubtitlesProvider;
 use App\Providers\PodnapisiProvider;
 use App\Providers\SubdlProvider;
 use App\Providers\Subf2mProvider;
+use App\Providers\SubzoneProvider;
+use App\Providers\SubkadeProvider;
 use App\Providers\TmdbMetadataProvider;
 use App\Providers\YifySubtitlesProvider;
 use App\Services\LanguageMap;
@@ -154,11 +156,13 @@ final class MovieController extends BaseController
         $podnapisi   = new PodnapisiProvider($this->http, $this->settings);
         $yify        = new YifySubtitlesProvider($this->http, $this->settings);
         $subf2m      = new Subf2mProvider($this->http, $this->settings, $this->cache);
+        $subzone     = new SubzoneProvider($this->http, $this->settings, $this->cache);
+        $subkade     = new SubkadeProvider($this->http, $this->settings, $this->cache);
         $subdl       = new SubdlProvider($this->http, $this->settings);
         $openSub     = new OpenSubtitlesProvider($this->http, $this->settings);
 
         $aggregator = new SubtitleAggregatorService(
-            [$freeOpenSub, $podnapisi, $yify, $subf2m, $subdl, $openSub],
+            [$freeOpenSub, $podnapisi, $yify, $subf2m, $subzone, $subkade, $subdl, $openSub],
             $this->cache,
             $this->settings,
             $this->http
@@ -166,6 +170,12 @@ final class MovieController extends BaseController
         $allSubtitles = $aggregator->getSubtitlesForImdb($media->imdbId, $media->mediaType, $media->title, $media->year);
 
         $availableSeasons = [];
+        if ($media->mediaType === 'tv') {
+            $totalSeasons = $tmdb->getSeasonCount($media->tmdbId, $media->imdbId);
+            for ($sIdx = 1; $sIdx <= min($totalSeasons, 50); $sIdx++) {
+                $availableSeasons[$sIdx] = $sIdx;
+            }
+        }
         foreach ($allSubtitles as $sub) {
             if ($sub->season !== null && $sub->season > 0) {
                 $availableSeasons[$sub->season] = $sub->season;
@@ -184,7 +194,7 @@ final class MovieController extends BaseController
 
         $displayedSubtitles = $allSubtitles;
         if ($season !== null && $media->mediaType === 'tv') {
-            // The overview list only samples each season; fetch the requested season in full.
+            // Fetch the requested season in full (all episodes + season packs)
             $seasonSubs = $aggregator->getSubtitlesForImdb($media->imdbId, $media->mediaType, $media->title, $media->year, $season);
             if ($seasonSubs !== []) {
                 $displayedSubtitles = $seasonSubs;
@@ -199,7 +209,7 @@ final class MovieController extends BaseController
         if ($season !== null) {
             $displayedSubtitles = array_values(array_filter(
                 $displayedSubtitles,
-                static fn($s) => $s->season === $season
+                static fn($s) => $s->season === $season || $s->season === null
             ));
         }
         if (count($displayedSubtitles) > 250) {

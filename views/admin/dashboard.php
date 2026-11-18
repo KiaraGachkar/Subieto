@@ -342,7 +342,7 @@ $adSlotsMeta = [
                         </button>
                     </div>
 
-                    <div x-show="testData !== null" x-cloak class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-4">
+                    <div x-show="testData !== null" x-cloak class="grid grid-cols-2 sm:grid-cols-7 gap-2.5 text-xs bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-4">
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
                             <div class="text-[11px] text-[#6c655a]">Metadata</div>
                             <div class="font-bold mt-0.5" :class="testData?.metadata?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.metadata?.ok ? ('OK (' + testData.metadata.ms + 'ms)') : 'Failed'"></div>
@@ -363,9 +363,17 @@ $adSlotsMeta = [
                             <div class="text-[11px] text-[#6c655a]">Subf2m</div>
                             <div class="font-bold mt-0.5" :class="testData?.subf2m?.ok ? 'text-emerald-700' : 'text-amber-700'" x-text="testData?.subf2m?.ok ? (testData.subf2m.count + ' subs') : 'No results / blocked'"></div>
                         </div>
+                        <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
+                            <div class="text-[11px] text-[#6c655a]">Subzone.ir</div>
+                            <div class="font-bold mt-0.5" :class="testData?.subzone?.ok ? 'text-emerald-700' : 'text-amber-700'" x-text="testData?.subzone?.ok ? (testData.subzone.count + ' subs') : 'No results / blocked'"></div>
+                        </div>
+                        <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
+                            <div class="text-[11px] text-[#6c655a]">Subkade.ir</div>
+                            <div class="font-bold mt-0.5" :class="testData?.subkade?.ok ? 'text-emerald-700' : 'text-amber-700'" x-text="testData?.subkade?.ok ? (testData.subkade.count + ' subs') : 'No results / blocked'"></div>
+                        </div>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
                         <label class="flex items-center justify-between bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-3.5 cursor-pointer">
                             <span class="font-bold">OpenSubtitles Free</span>
                             <input type="checkbox" name="free_opensub_enabled" value="1" <?= ($config['providers.free_opensub_enabled'] ?? '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 accent-[#2e6f40]">
@@ -381,6 +389,14 @@ $adSlotsMeta = [
                         <label class="flex items-center justify-between bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-3.5 cursor-pointer">
                             <span class="font-bold">Subf2m Scraper</span>
                             <input type="checkbox" name="subf2m_enabled" value="1" <?= ($config['providers.subf2m_enabled'] ?? '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 accent-[#2e6f40]">
+                        </label>
+                        <label class="flex items-center justify-between bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-3.5 cursor-pointer">
+                            <span class="font-bold">Subzone.ir (FA)</span>
+                            <input type="checkbox" name="subzone_enabled" value="1" <?= ($config['providers.subzone_enabled'] ?? '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 accent-[#2e6f40]">
+                        </label>
+                        <label class="flex items-center justify-between bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-3.5 cursor-pointer">
+                            <span class="font-bold">Subkade.ir (FA)</span>
+                            <input type="checkbox" name="subkade_enabled" value="1" <?= ($config['providers.subkade_enabled'] ?? '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 accent-[#2e6f40]">
                         </label>
                     </div>
 

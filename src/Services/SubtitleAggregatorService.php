@@ -11,6 +11,8 @@ use App\Core\SettingsManager;
 use App\DTOs\SubtitleItem;
 use App\Providers\FreeOpenSubtitlesProvider;
 use App\Providers\Subf2mProvider;
+use App\Providers\SubzoneProvider;
+use App\Providers\SubkadeProvider;
 
 defined('APP_SECURE_BOOT') or exit;
 
@@ -48,7 +50,7 @@ final class SubtitleAggregatorService
         }
         $configHash = substr(md5(implode('|', $configParts)), 0, 8);
         $seasonPart = $season !== null ? "_s{$season}" : '';
-        $cacheKey = "subs_v9_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}{$seasonPart}";
+        $cacheKey = "subs_v11_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}{$seasonPart}";
 
         $cached = $this->cache->get($cacheKey);
         if (is_array($cached)) {
@@ -110,6 +112,16 @@ final class SubtitleAggregatorService
                             $all[] = $item;
                         }
                     }
+                    if ($provider instanceof SubzoneProvider && $provider->isConfigured() && $title !== '') {
+                        foreach ($provider->searchByTitle($title, $year, 'tv', $season) as $item) {
+                            $all[] = $item;
+                        }
+                    }
+                    if ($provider instanceof SubkadeProvider && $provider->isConfigured() && $title !== '') {
+                        foreach ($provider->searchByTitle($title, $year, 'tv', $season) as $item) {
+                            $all[] = $item;
+                        }
+                    }
                 }
             } elseif ($title !== '') {
                 $faCount = 0;
@@ -118,9 +130,19 @@ final class SubtitleAggregatorService
                         $faCount++;
                     }
                 }
-                // Run Subf2m whenever total results are scarce OR Persian subtitles are scarce (< 3)
+                // Run Subzone & Subf2m whenever total results are scarce OR Persian subtitles are scarce (< 3)
                 if (count($all) < 8 || $faCount < 3) {
                     foreach ($this->providers as $provider) {
+                        if ($provider instanceof SubzoneProvider && $provider->isConfigured()) {
+                            foreach ($provider->searchByTitle($title, $year, 'movie', null) as $item) {
+                                $all[] = $item;
+                            }
+                        }
+                        if ($provider instanceof SubkadeProvider && $provider->isConfigured()) {
+                            foreach ($provider->searchByTitle($title, $year, 'movie', null) as $item) {
+                                $all[] = $item;
+                            }
+                        }
                         if ($provider instanceof Subf2mProvider && $provider->isConfigured()) {
                             foreach ($provider->searchByTitle($title, $year) as $item) {
                                 $all[] = $item;
