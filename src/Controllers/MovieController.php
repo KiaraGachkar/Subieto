@@ -19,6 +19,7 @@ use App\Services\LocaleService;
 use App\Services\ProxyDownloadService;
 use App\Services\SeoHelper;
 use App\Services\SubtitleAggregatorService;
+use App\Services\SubtitleRepository;
 use PDO;
 use Throwable;
 
@@ -161,11 +162,13 @@ final class MovieController extends BaseController
         $subdl       = new SubdlProvider($this->http, $this->settings);
         $openSub     = new OpenSubtitlesProvider($this->http, $this->settings);
 
+        $repository = new SubtitleRepository($this->db, $this->prefix, $this->basePath . '/storage');
         $aggregator = new SubtitleAggregatorService(
-            [$freeOpenSub, $podnapisi, $yify, $subf2m, $subzone, $subkade, $subdl, $openSub],
+            [$freeOpenSub, $podnapisi, $yify, $subzone, $subf2m, $subkade, $subdl, $openSub],
             $this->cache,
             $this->settings,
-            $this->http
+            $this->http,
+            $repository
         );
         $allSubtitles = $aggregator->getSubtitlesForImdb($media->imdbId, $media->mediaType, $media->title, $media->year);
 
@@ -180,6 +183,15 @@ final class MovieController extends BaseController
             if ($sub->season !== null && $sub->season > 0) {
                 $availableSeasons[$sub->season] = $sub->season;
             }
+        }
+        $seasonCounts = $repository->getSeasonCounts($media->imdbId);
+        foreach (array_keys($seasonCounts) as $sKey) {
+            if ($sKey > 0) {
+                $availableSeasons[$sKey] = $sKey;
+            }
+        }
+        if ($season !== null && $season > 0) {
+            $availableSeasons[$season] = $season;
         }
         ksort($availableSeasons);
         $seasonNumbers = array_values($availableSeasons);
@@ -246,6 +258,7 @@ final class MovieController extends BaseController
             'activeSeason'     => $season,
             'activeLangInfo'   => $langInfo,
             'availableSeasons' => $seasonNumbers,
+            'seasonCounts'     => $seasonCounts,
             'similarMedia'     => $similarMedia,
             'signer'           => $this->signer,
             'tokenTtl'         => 14400 + $pageTtl,

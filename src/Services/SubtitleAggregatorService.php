@@ -25,21 +25,37 @@ final class SubtitleAggregatorService
         private readonly array $providers,
         private readonly Cache $cache,
         private readonly SettingsManager $settings,
-        private readonly HttpClient $http = new HttpClient()
+        private readonly HttpClient $http = new HttpClient(),
+        private readonly ?SubtitleRepository $repository = null
     ) {
     }
 
     /**
-     * Fetches subtitles from all configured providers concurrently and sorts by admin priority languages.
+     * Reads from the permanent MySQL subtitle archive first (<5ms).
+     * On first visit, fetches from APIs + Subzone.ir (with Subf2m.co failover) and persists permanently.
      *
      * @return SubtitleItem[]
      */
-    public function getSubtitlesForImdb(string $imdbId, string $mediaType = 'movie', string $title = '', string $year = '', ?int $season = null): array
-    {
+    public function getSubtitlesForImdb(
+        string $imdbId,
+        string $mediaType = 'movie',
+        string $title = '',
+        string $year = '',
+        ?int $season = null,
+        bool $forceRefresh = false
+    ): array {
         $imdbId = strtolower(trim($imdbId));
         $priorityRaw = strtolower(trim((string) $this->settings->get('providers.priority_languages', 'en,fa,ar,es,fr,tr')));
-        $priorityHash = substr(md5($priorityRaw), 0, 8);
 
+        // 1. Check Permanent MySQL Archive first (survives cache purges & setting changes)
+        if (!$forceRefresh && $this->repository !== null) {
+            $archived = $this->repository->getByImdbId($imdbId, $season);
+            if ($archived !== []) {
+                return $this->dedupeAndSort($archived, $priorityRaw);
+            }
+        }
+
+        $priorityHash = substr(md5($priorityRaw), 0, 8);
         $configParts = [];
         foreach ($this->providers as $provider) {
             $configParts[] = get_class($provider) . ':' . ($provider->isConfigured() ? '1' : '0');
@@ -50,19 +66,25 @@ final class SubtitleAggregatorService
         }
         $configHash = substr(md5(implode('|', $configParts)), 0, 8);
         $seasonPart = $season !== null ? "_s{$season}" : '';
-        $cacheKey = "subs_v11_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}{$seasonPart}";
+        $cacheKey = "subs_v12_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}{$seasonPart}";
 
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
-            return self::fromRows($cached);
+        if (!$forceRefresh) {
+            $cached = $this->cache->get($cacheKey);
+            if (is_array($cached)) {
+                return self::fromRows($cached);
+            }
         }
 
         $lockAcquired = $this->cache->lock($cacheKey, 25);
         if (!$lockAcquired) {
-            // Another worker is building this key. Back off and re-check the
-            // cache a few times before proceeding, to avoid a thundering herd.
             for ($attempt = 0; $attempt < 3; $attempt++) {
-                usleep(75000 * ($attempt + 1)); // 75ms, 150ms, 225ms
+                usleep(75000 * ($attempt + 1));
+                if ($this->repository !== null) {
+                    $retryDb = $this->repository->getByImdbId($imdbId, $season);
+                    if ($retryDb !== []) {
+                        return $this->dedupeAndSort($retryDb, $priorityRaw);
+                    }
+                }
                 $retryCached = $this->cache->get($cacheKey);
                 if (is_array($retryCached)) {
                     return self::fromRows($retryCached);
@@ -89,7 +111,7 @@ final class SubtitleAggregatorService
                 }
             }
 
-            $responses = $this->http->getJsonBatch($batchRequests, 10);
+            $responses = $this->http->getJsonBatch($batchRequests, 9);
 
             $all = [];
             foreach ($activeProviders as $idx => $provider) {
@@ -98,96 +120,81 @@ final class SubtitleAggregatorService
                 }
             }
 
-            // Series need special handling: the free OpenSubtitles endpoint is keyed by
-            // episode, and Subf2m splits series into one page per season.
+            // Shared time budget so slow scrapers never exceed PHP/LiteSpeed limits
+            @set_time_limit(60);
+            $scrapeDeadline = microtime(true) + 12.0;
+            $inBudget = static fn(): bool => microtime(true) < $scrapeDeadline;
+
+            $subzone = null;
+            $subf2m  = null;
+            $subkade = null;
+            $freeOs  = null;
+            foreach ($this->providers as $provider) {
+                if ($provider instanceof SubzoneProvider) {
+                    $subzone = $provider;
+                } elseif ($provider instanceof Subf2mProvider) {
+                    $subf2m = $provider;
+                } elseif ($provider instanceof SubkadeProvider) {
+                    $subkade = $provider;
+                } elseif ($provider instanceof FreeOpenSubtitlesProvider) {
+                    $freeOs = $provider;
+                }
+            }
+
             if ($mediaType === 'tv') {
-                foreach ($this->providers as $provider) {
-                    if ($provider instanceof FreeOpenSubtitlesProvider && $provider->isConfigured()) {
-                        foreach ($provider->searchSeries($imdbId, 120, $season) as $item) {
-                            $all[] = $item;
-                        }
+                if ($freeOs !== null && $freeOs->isConfigured()) {
+                    foreach ($freeOs->searchSeries($imdbId, 120, $season) as $item) {
+                        $all[] = $item;
                     }
-                    if ($provider instanceof Subf2mProvider && $provider->isConfigured() && $title !== '') {
-                        foreach ($provider->searchSeries($title, $year, 12, $season) as $item) {
-                            $all[] = $item;
-                        }
+                }
+                // Primary mirror: Subzone.ir
+                $szItems = [];
+                if ($subzone !== null && $subzone->isConfigured() && $title !== '' && $inBudget()) {
+                    $szItems = $subzone->searchSeries($title, $year, 12, $season);
+                    foreach ($szItems as $item) {
+                        $all[] = $item;
                     }
-                    if ($provider instanceof SubzoneProvider && $provider->isConfigured() && $title !== '') {
-                        foreach ($provider->searchByTitle($title, $year, 'tv', $season) as $item) {
-                            $all[] = $item;
-                        }
+                }
+                // Failover to Subf2m.co only if Subzone returned < 2 results
+                if (count($szItems) < 2 && $subf2m !== null && $subf2m->isConfigured() && $title !== '' && $inBudget()) {
+                    foreach ($subf2m->searchSeries($title, $year, 12, $season) as $item) {
+                        $all[] = $item;
                     }
-                    if ($provider instanceof SubkadeProvider && $provider->isConfigured() && $title !== '') {
-                        foreach ($provider->searchByTitle($title, $year, 'tv', $season) as $item) {
-                            $all[] = $item;
-                        }
+                }
+                if ($subkade !== null && $subkade->isConfigured() && $title !== '' && $inBudget()) {
+                    foreach ($subkade->searchByTitle($title, $year, 'tv', $season) as $item) {
+                        $all[] = $item;
                     }
                 }
             } elseif ($title !== '') {
-                $faCount = 0;
-                foreach ($all as $existing) {
-                    if ($existing->languageCode === 'fa') {
-                        $faCount++;
+                // Primary mirror: Subzone.ir (always run on first fetch to populate complete multi-language + FA archive)
+                $szItems = [];
+                if ($subzone !== null && $subzone->isConfigured() && $inBudget()) {
+                    $szItems = $subzone->searchByTitle($title, $year);
+                    foreach ($szItems as $item) {
+                        $all[] = $item;
                     }
                 }
-                // Run Subzone & Subf2m whenever total results are scarce OR Persian subtitles are scarce (< 3)
-                if (count($all) < 8 || $faCount < 3) {
-                    foreach ($this->providers as $provider) {
-                        if ($provider instanceof SubzoneProvider && $provider->isConfigured()) {
-                            foreach ($provider->searchByTitle($title, $year, 'movie', null) as $item) {
-                                $all[] = $item;
-                            }
-                        }
-                        if ($provider instanceof SubkadeProvider && $provider->isConfigured()) {
-                            foreach ($provider->searchByTitle($title, $year, 'movie', null) as $item) {
-                                $all[] = $item;
-                            }
-                        }
-                        if ($provider instanceof Subf2mProvider && $provider->isConfigured()) {
-                            foreach ($provider->searchByTitle($title, $year) as $item) {
-                                $all[] = $item;
-                            }
-                        }
+                // Failover to Subf2m.co only if Subzone returned < 2 results
+                if (count($szItems) < 2 && $subf2m !== null && $subf2m->isConfigured() && $inBudget()) {
+                    foreach ($subf2m->searchByTitle($title, $year) as $item) {
+                        $all[] = $item;
+                    }
+                }
+                $faCount = count(array_filter($all, static fn(SubtitleItem $s): bool => $s->languageCode === 'fa'));
+                if ($faCount < 3 && $subkade !== null && $subkade->isConfigured() && $inBudget()) {
+                    foreach ($subkade->searchByTitle($title, $year, 'movie', null) as $item) {
+                        $all[] = $item;
                     }
                 }
             }
 
-            // Deduplicate identical release + language + episode combinations across mirrors
-            $deduped = [];
-            $seenKeys = [];
-            foreach ($all as $item) {
-                $normRel = preg_replace('/[^a-z0-9]+/', '', strtolower($item->releaseName));
-                $dKey = $item->languageCode . '|' . $normRel . '|' . ($item->season ?? 0) . '|' . ($item->episode ?? 0);
-                if ($normRel !== '' && isset($seenKeys[$dKey])) {
-                    continue;
-                }
-                if ($normRel !== '') {
-                    $seenKeys[$dKey] = true;
-                }
-                $deduped[] = $item;
+            $all = $this->dedupeAndSort($all, $priorityRaw);
+
+            // Persist permanently in MySQL archive
+            if ($this->repository !== null) {
+                $this->repository->saveItems($imdbId, $all, false);
             }
-            $all = $deduped;
-
-            $priorityList = array_values(array_filter(array_map('trim', explode(',', $priorityRaw)), static fn(string $v): bool => $v !== ''));
-            $priorityMap  = array_flip($priorityList);
-
-            usort($all, static function (SubtitleItem $a, SubtitleItem $b) use ($priorityMap): int {
-                if ($a->languageCode !== $b->languageCode) {
-                    $rankA = $priorityMap[$a->languageCode] ?? 999;
-                    $rankB = $priorityMap[$b->languageCode] ?? 999;
-                    if ($rankA !== $rankB) {
-                        return $rankA <=> $rankB;
-                    }
-                    return strcmp($a->languageLabel, $b->languageLabel);
-                }
-                if (($a->season ?? 0) !== ($b->season ?? 0)) {
-                    return ($a->season ?? 0) <=> ($b->season ?? 0);
-                }
-                if (($a->episode ?? 0) !== ($b->episode ?? 0)) {
-                    return ($a->episode ?? 0) <=> ($b->episode ?? 0);
-                }
-                return strcmp($a->provider, $b->provider);
-            });
 
             $ttl = min(604800, max(0, (int) $this->settings->get('site.cache_ttl', 21600)));
             $this->cache->set($cacheKey, array_map(static fn(SubtitleItem $s) => $s->toArray(), $all), !empty($all) ? $ttl : 300);
@@ -196,6 +203,50 @@ final class SubtitleAggregatorService
         } finally {
             $this->cache->unlock($cacheKey);
         }
+    }
+
+    /**
+     * @param SubtitleItem[] $items
+     * @return SubtitleItem[]
+     */
+    private function dedupeAndSort(array $items, string $priorityRaw): array
+    {
+        $deduped = [];
+        $seenKeys = [];
+        foreach ($items as $item) {
+            $normRel = preg_replace('/[^a-z0-9]+/', '', strtolower($item->releaseName));
+            $dKey = $item->languageCode . '|' . $normRel . '|' . ($item->season ?? 0) . '|' . ($item->episode ?? 0);
+            if ($normRel !== '' && isset($seenKeys[$dKey])) {
+                continue;
+            }
+            if ($normRel !== '') {
+                $seenKeys[$dKey] = true;
+            }
+            $deduped[] = $item;
+        }
+
+        $priorityList = array_values(array_filter(array_map('trim', explode(',', $priorityRaw)), static fn(string $v): bool => $v !== ''));
+        $priorityMap  = array_flip($priorityList);
+
+        usort($deduped, static function (SubtitleItem $a, SubtitleItem $b) use ($priorityMap): int {
+            if ($a->languageCode !== $b->languageCode) {
+                $rankA = $priorityMap[$a->languageCode] ?? 999;
+                $rankB = $priorityMap[$b->languageCode] ?? 999;
+                if ($rankA !== $rankB) {
+                    return $rankA <=> $rankB;
+                }
+                return strcmp($a->languageLabel, $b->languageLabel);
+            }
+            if (($a->season ?? 0) !== ($b->season ?? 0)) {
+                return ($a->season ?? 0) <=> ($b->season ?? 0);
+            }
+            if (($a->episode ?? 0) !== ($b->episode ?? 0)) {
+                return ($a->episode ?? 0) <=> ($b->episode ?? 0);
+            }
+            return strcmp($a->provider, $b->provider);
+        });
+
+        return $deduped;
     }
 
     /**

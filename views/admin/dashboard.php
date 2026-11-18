@@ -434,6 +434,27 @@ $adSlotsMeta = [
                 </div>
             </div>
 
+
+                <!-- Permanent MySQL Subtitle Archive & Cron Sync -->
+                <div class="bg-white border border-[#efeae1] rounded-3xl p-6 shadow-sm space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#efeae1] pb-3">
+                        <div>
+                            <h3 class="font-display text-sm font-bold text-[#2b302d]"><?= $t('آرشیو دائمی دیتابیس و همگام‌سازی خودکار (Cron)', 'Permanent Subtitle Archive & Auto-Sync (Cron)') ?></h3>
+                            <p class="text-xs text-[#6c655a]"><?= $t('تمام زیرنویس‌های دریافت‌شده از Subzone.ir و Subf2m در جدول دائمی دیتابیس ذخیره می‌شوند و با پاک کردن کش حذف نمی‌شوند.', 'All fetched subtitles from Subzone.ir & Subf2m are stored permanently in MySQL and survive cache purges.') ?></p>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="px-3 py-1 rounded-full bg-[#d6efe0] text-[#2e6f40] font-bold"><?= number_format((int) ($archiveStats['total'] ?? 0)) ?> <?= $t('زیرنویس', 'subs') ?></span>
+                            <span class="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-bold"><?= number_format((int) ($archiveStats['persian'] ?? 0)) ?> <?= $t('فارسی', 'FA') ?></span>
+                            <span class="px-3 py-1 rounded-full bg-[#f5f1ea] text-[#6c655a] font-bold"><?= number_format((int) ($archiveStats['titles'] ?? 0)) ?> <?= $t('عنوان', 'titles') ?></span>
+                        </div>
+                    </div>
+
+                    <div class="text-xs space-y-1.5">
+                        <label class="block font-bold text-[#6c655a]"><?= $t('لینک وب‌هوک Cron (قابل تنظیم در cPanel یا سرویس رایگان cron-job.org هر ۵ دقیقه):', 'Cron Webhook URL (schedule every 5 mins in cPanel or cron-job.org):') ?></label>
+                        <input type="text" readonly dir="ltr" onclick="this.select()" value="<?= View::e($cronUrl ?? '') ?>" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-4 py-2.5 font-mono text-[11px] text-[#2b302d]">
+                    </div>
+                </div>
+
             <!-- TAB 3: ADS & SAMPLE BANNER PREVIEW -->
             <div x-show="tab === 'ads'" class="space-y-5">
                 <div class="bg-white border border-[#efeae1] rounded-3xl p-6 shadow-sm space-y-4">
@@ -638,6 +659,22 @@ $adSlotsMeta = [
                 </button>
             </div>
         </form>
+
+
+        <!-- Manual Instant IMDb Archive Sync -->
+        <div x-show="tab === 'sources'" x-cloak class="bg-white border border-[#efeae1] rounded-3xl p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <h3 class="font-display text-sm font-bold text-[#2b302d]"><?= $t('همگام‌سازی فوری و کامل یک فیلم یا سریال', 'Instant Full Sync by IMDb ID') ?></h3>
+                <p class="text-xs text-[#6c655a] mt-0.5"><?= $t('شناسه IMDb را وارد کنید تا تمام فصل‌ها و زبان‌های آن از Subzone.ir و Subf2m در دیتابیس ذخیره شوند.', 'Enter an IMDb ID to fetch and permanently archive all seasons and languages.') ?></p>
+            </div>
+            <form action="/admin/sync-imdb" method="POST" class="flex items-center gap-2">
+                <input type="hidden" name="_csrf" value="<?= View::e(Session::csrfToken()) ?>">
+                <input type="text" name="imdb_id" dir="ltr" required placeholder="tt1375666" pattern="tt[0-9]{5,10}" class="bg-[#f5f1ea] border border-[#d8d3c9] rounded-full px-4 py-2 text-xs font-mono w-36">
+                <button type="submit" class="px-4 py-2 rounded-full bg-[#2e6f40] hover:bg-[#245832] text-white text-xs font-bold transition">
+                    <?= $t('همگام‌سازی الان', 'Sync Now') ?>
+                </button>
+            </form>
+        </div>
 
         <!-- Cache Maintenance Card -->
         <div x-show="tab === 'security'" x-cloak class="bg-white border border-[#efeae1] rounded-3xl p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">

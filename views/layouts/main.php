@@ -93,7 +93,7 @@ $baseP    = $urlParts['path'] ?? '/';
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/subieto.css?v=46">
+    <link rel="stylesheet" href="/assets/subieto.css?v=50">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
     <?= $headScripts ?>
 </head>
@@ -110,67 +110,27 @@ $baseP    = $urlParts['path'] ?? '/';
                 <b><?= View::e($siteTitle) ?></b>
             </a>
 
-                <div class="bar__search" x-data="liveSearch(true)">
-                    <form action="/search" method="GET" role="search" @submit="saveHistory(query)">
+                <div class="bar__search">
+                    <form action="/search" method="GET" role="search">
                         <div class="bar__pill">
                             <svg viewBox="0 0 22 22" fill="none" aria-hidden="true">
                                 <circle cx="9.6" cy="9.6" r="7" stroke="currentColor" stroke-width="1.7"/>
                                 <path d="M14.8 14.8l4.6 4.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
                             </svg>
                             <input
-                                x-ref="searchInput"
+                                id="sb-header-search"
                                 type="text"
                                 name="q"
-                                x-model="query"
-                                @input.debounce.220ms="fetchResults()"
-                                @focus="onFocus()"
-                                @keydown="onKeydown($event)"
-                                @click.away="open = false"
-                                autocomplete="off"
+                                value="<?= View::e((string) ($_GET['q'] ?? '')) ?>"
                                 aria-label="<?= $isFa ? 'جستجوی فیلم، سریال یا کد IMDb' : 'Search films, series, or IMDb ID' ?>"
                                 placeholder="<?= $isFa ? 'جستجوی فیلم، سریال یا کد IMDb...' : 'Films, series, or IMDb ID…' ?>"
                             >
-                            <button type="button" class="sp-clear" x-show="query.length > 0" x-cloak @click="clearQuery()" aria-label="Clear">✕</button>
-                            <span class="sp-kbd" x-show="query.length === 0">/</span>
+                            <span class="sp-kbd">/</span>
                             <button type="submit" class="sp-go-mini" aria-label="<?= $isFa ? 'جستجو' : 'Search' ?>">
                                 <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.6 8h10M8.8 4.2L12.6 8l-3.8 3.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
                         </div>
                     </form>
-
-                    <div class="ac" x-show="open && (results.length > 0 || recent.length > 0)" x-cloak style="min-width:min(320px,calc(100vw - 32px))">
-                        <template x-if="query.trim().length < 2 && recent.length > 0">
-                            <div>
-                                <div class="ac__sec">
-                                    <span><?= $isFa ? 'جستجوهای اخیر' : 'Recent searches' ?></span>
-                                    <button type="button" style="font-size:11px;color:var(--muted);text-decoration:underline" @click="clearHistory()"><?= $isFa ? 'پاک کردن' : 'Clear' ?></button>
-                                </div>
-                                <div class="ac__recent">
-                                    <template x-for="term in recent" :key="term">
-                                        <button type="button" class="ac__rchip" @click="pickExample(term)" x-text="term"></button>
-                                    </template>
-                                </div>
-                            </div>
-                        </template>
-
-                        <template x-if="results.length > 0">
-                            <div class="ac__list">
-                                <div class="ac__sec" x-show="query.trim().length < 2">
-                                    <span><?= $isFa ? 'پیشنهادهای پرطرفدار' : 'Popular titles' ?></span>
-                                </div>
-                                <template x-for="(item, idx) in results" :key="item.imdbId">
-                                    <a :href="item.url" class="ac__item" :data-active="String(activeIdx === idx)" @mouseenter="activeIdx = idx" @click="saveHistory(item.title)">
-                                        <span class="ac__thumb"><img :src="item.posterUrl" alt="" onerror="this.style.display='none'"></span>
-                                        <div style="min-width:0">
-                                            <b dir="ltr" x-text="item.title"></b>
-                                            <small x-text="(item.year ? item.year + ' · ' : '') + (<?= $isFa ? 'true' : 'false' ?> ? item.mediaType : item.mediaTypeEn)"></small>
-                                        </div>
-                                        <span class="ac__n" dir="ltr" x-text="item.imdbId"></span>
-                                    </a>
-                                </template>
-                            </div>
-                        </template>
-                    </div>
                 </div>
 
             <div class="bar__r">
@@ -282,123 +242,15 @@ if ($settings->get('ads.enabled', '1') === '1') {
         });
         <?php endif; ?>
 
-        function liveSearch(isPrimary = true) {
-            return {
-                query: '',
-                results: [],
-                recent: [],
-                open: false,
-                activeIdx: -1,
-                abortCtrl: null,
-                init() {
-                    try {
-                        const raw = localStorage.getItem('sb_recent_searches');
-                        this.recent = raw ? JSON.parse(raw) : [];
-                    } catch (e) {
-                        this.recent = [];
-                    }
-                    if (isPrimary) {
-                        window.addEventListener('keydown', (e) => {
-                            if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) {
-                                e.preventDefault();
-                                this.$refs.searchInput?.focus();
-                            }
-                        });
-                    }
-                },
-                get isImdb() {
-                    return /^tt\d{5,10}$/i.test(this.query.trim());
-                },
-                saveHistory(term) {
-                    const clean = String(term || '').trim();
-                    if (clean.length < 2) return;
-                    const next = [clean, ...this.recent.filter(x => x.toLowerCase() !== clean.toLowerCase())].slice(0, 5);
-                    this.recent = next;
-                    try { localStorage.setItem('sb_recent_searches', JSON.stringify(next)); } catch (e) {}
-                },
-                clearHistory() {
-                    this.recent = [];
-                    try { localStorage.removeItem('sb_recent_searches'); } catch (e) {}
-                },
-                clearQuery() {
-                    this.query = '';
-                    this.activeIdx = -1;
-                    this.onFocus();
-                    this.$refs.searchInput?.focus();
-                },
-                async onFocus() {
-                    this.open = true;
-                    if (this.query.trim().length < 2 && this.results.length === 0) {
-                        await this.fetchResults(true);
-                    }
-                },
-                async fetchResults(allowEmpty = false) {
-                    const q = this.query.trim();
-                    this.activeIdx = -1;
-                    if (q.length < 2 && !allowEmpty) {
-                        if (q.length === 0) {
-                            await this.fetchResults(true);
-                        } else {
-                            this.results = [];
-                        }
-                        return;
-                    }
-                    if (this.abortCtrl) {
-                        this.abortCtrl.abort();
-                    }
-                        const sKey = 'sb_ac_v2_' + q.toLowerCase();
-                    try {
-                        const hit = sessionStorage.getItem(sKey);
-                        if (hit) {
-                            this.results = JSON.parse(hit);
-                            this.open = this.results.length > 0 || this.recent.length > 0;
-                            return;
-                        }
-                    } catch (e) {}
-
-                    this.abortCtrl = new AbortController();
-                    try {
-                        const res = await fetch('/api/autocomplete?q=' + encodeURIComponent(q), { signal: this.abortCtrl.signal });
-                        const data = await res.json();
-                        this.results = Array.isArray(data) ? data : [];
-                        this.open = this.results.length > 0 || this.recent.length > 0;
-                        if (this.results.length > 0) {
-                            try { sessionStorage.setItem(sKey, JSON.stringify(this.results)); } catch (e) {}
-                        }
-                    } catch (e) {
-                        if (e.name !== 'AbortError') {
-                            this.results = [];
-                        }
-                    }
-                },
-                onKeydown(e) {
-                    if (e.key === 'Escape') {
-                        this.open = false;
-                        this.activeIdx = -1;
-                        return;
-                    }
-                    if (!this.open || this.results.length === 0) return;
-                    if (e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        this.activeIdx = (this.activeIdx + 1) % this.results.length;
-                    } else if (e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        this.activeIdx = (this.activeIdx - 1 + this.results.length) % this.results.length;
-                    } else if (e.key === 'Enter' && this.activeIdx >= 0 && this.results[this.activeIdx]) {
-                        e.preventDefault();
-                        const chosen = this.results[this.activeIdx];
-                        this.saveHistory(chosen.title);
-                        window.location.href = chosen.url;
-                    }
-                },
-                pickExample(term) {
-                    this.query = term;
-                    this.open = true;
-                    this.fetchResults();
-                    this.$refs.searchInput?.focus();
+        window.addEventListener('keydown', function (e) {
+            if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((document.activeElement && document.activeElement.tagName) || '')) {
+                var inp = document.getElementById('sb-header-search');
+                if (inp) {
+                    e.preventDefault();
+                    inp.focus();
                 }
-            };
-        }
+            }
+        });
     </script>
 </body>
 </html>

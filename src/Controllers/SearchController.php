@@ -61,50 +61,6 @@ final class SearchController extends BaseController
         ], 600);
     }
 
-    public function autocomplete(): void
-    {
-        header('Content-Type: application/json; charset=utf-8');
-        header('Cache-Control: no-store');
-
-        $limiter = new RateLimiter($this->db, $this->prefix);
-        if (!$limiter->allow('autocomplete', 90, 60)) {
-            http_response_code(429);
-            header('Retry-After: 60');
-            echo json_encode([]);
-            return;
-        }
-
-        $rawQ  = $_GET['q'] ?? '';
-        $query = is_string($rawQ) ? mb_substr(trim($rawQ), 0, 120) : '';
-
-        // Zero-query: return top trending titles when user focuses empty search input
-        if ($query === '') {
-            $tmdb = new TmdbMetadataProvider($this->http, $this->settings, $this->cache);
-            $trending = $tmdb->getTrending('movie', 4);
-            echo json_encode($this->formatPayload($trending, true), JSON_UNESCAPED_UNICODE);
-            return;
-        }
-
-        if (mb_strlen($query) < 2 || mb_strlen($query) > 80) {
-            echo json_encode([]);
-            return;
-        }
-
-        $acCacheKey = 'ac_v2_' . md5(mb_strtolower($query));
-        $cachedPayload = $this->cache->get($acCacheKey);
-        if (is_array($cachedPayload)) {
-            echo json_encode($cachedPayload, JSON_UNESCAPED_UNICODE);
-            return;
-        }
-
-        $items = $this->hybridSearch($query, 7);
-        $payload = $this->formatPayload($items, false);
-        if (!empty($payload)) {
-            $this->cache->set($acCacheKey, $payload, 600);
-        }
-        echo json_encode($payload, JSON_UNESCAPED_UNICODE);
-    }
-
     /**
      * Combines ultra-fast local indexed_media search (supports Persian & English titles + year extraction)
      * with live TMDB / Cinemeta API results and ranks exact/prefix matches first.
@@ -261,22 +217,4 @@ final class SearchController extends BaseController
         return array_slice($list, 0, $limit);
     }
 
-    /**
-     * @param MediaItem[] $items
-     * @return array<int, array<string, mixed>>
-     */
-    private function formatPayload(array $items, bool $isTrending): array
-    {
-        return array_map(static fn(MediaItem $m): array => [
-            'imdbId'       => $m->imdbId,
-            'title'        => $m->title,
-            'persianTitle' => $m->persianTitle,
-            'year'         => $m->year,
-            'mediaType'    => $m->mediaType === 'tv' ? 'سریال' : 'فیلم',
-            'mediaTypeEn'  => $m->mediaType === 'tv' ? 'Series' : 'Film',
-            'posterUrl'    => $m->posterUrl,
-            'url'          => '/subtitles/' . $m->imdbId . '/' . $m->slug,
-            'trending'     => $isTrending,
-        ], $items);
-    }
 }

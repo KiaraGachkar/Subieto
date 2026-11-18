@@ -15,6 +15,8 @@ use App\Providers\SubkadeProvider;
 use App\Providers\TmdbMetadataProvider;
 use App\Providers\YifySubtitlesProvider;
 use App\Services\LocaleService;
+use App\Services\SeoHelper;
+use App\Services\SubtitleRepository;
 use PDO;
 
 defined('APP_SECURE_BOOT') or exit;
@@ -125,7 +127,17 @@ final class AdminController extends BaseController
         $missingSubs    = $this->metrics->getTopMissingSubtitles(10);
         $staticPagesCnt = $this->pageCache?->countFiles() ?? 0;
 
+        $repo = new SubtitleRepository($this->db, $this->prefix, $this->basePath . '/storage');
+        $cronToken = trim((string) $this->settings->get('cron.secret_token', ''));
+        if ($cronToken === '') {
+            $cronToken = bin2hex(random_bytes(20));
+            $this->settings->updateMany(['cron.secret_token' => $cronToken]);
+        }
+        $cronUrl = SeoHelper::getBaseUrl() . '/cron/sync?token=' . $cronToken;
+
         $this->render('admin/dashboard', [
+            'archiveStats'      => $repo->getArchiveStats(),
+            'cronUrl'           => $cronUrl,
             'adminLocale'       => LocaleService::resolveAdminLocale(),
             'pageTitle'         => 'Admin Studio | Subieto',
             'config'            => array_diff_key($this->settings->all(), ['admin.password_hash' => 1, 'app.secret_key' => 1]),
@@ -352,7 +364,7 @@ final class AdminController extends BaseController
             $podItems  = isset($batch['pod']) ? $podnapisi->parseSearchResponse($batchRes['pod'] ?? null) : [];
             $yifyItems = isset($batch['yify']) ? $yify->parseSearchResponse($batchRes['yify'] ?? null) : [];
             $s2mItems  = $subf2m->searchByTitle('Inception', '2010');
-            $szItems   = $subzone->searchByTitle('Inception', '2010', 'movie', null);
+            $szItems   = $subzone->searchByTitle('Inception', '2010');
             $skItems   = $subkade->searchByTitle('Inception', '2010', 'movie', null);
 
             echo json_encode([
@@ -369,6 +381,35 @@ final class AdminController extends BaseController
             http_response_code(500);
             echo json_encode(['error' => 'exception', 'message' => $e->getMessage()]);
         }
+    }
+
+
+    public function syncImdbNow(): void
+    {
+        $this->requireAdmin();
+
+        if (!Session::verifyCsrf($_POST['_csrf'] ?? null)) {
+            Session::flash('error', 'Invalid security token.');
+            $this->redirect('/admin');
+        }
+
+        $imdbId = strtolower(trim((string) ($_POST['imdb_id'] ?? '')));
+        if (!preg_match('/^tt\d{5,10}$/', $imdbId)) {
+            Session::flash('error', 'لطفاً یک کد IMDb معتبر وارد کنید (مثال: tt1375666).');
+            $this->redirect('/admin');
+        }
+
+        @set_time_limit(90);
+        $repo = new SubtitleRepository($this->db, $this->prefix, $this->basePath . '/storage');
+        $res = $repo->syncSingleTitle($imdbId, $this->http, $this->settings, $this->cache);
+        $this->pageCache?->clearAll();
+
+        if ($res['title'] === '') {
+            Session::flash('error', "عنوانی با شناسه {$imdbId} یافت نشد.");
+        } else {
+            Session::flash('success', "عنوان «{$res['title']}» با موفقیت در آرشیو دائمی ذخیره شد ({$res['fetched']} زیرنویس کل / {$res['persian']} فارسی).");
+        }
+        $this->redirect('/admin');
     }
 
     private function requireAdmin(): void

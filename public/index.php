@@ -184,7 +184,6 @@ if (!$installer->isInstalled()) {
 // Public & SEO Routes
 $router->get('/', 'App\Controllers\HomeController@index');
 $router->get('/search', 'App\Controllers\SearchController@search');
-$router->get('/api/autocomplete', 'App\Controllers\SearchController@autocomplete');
 $router->post('/api/ad-click', 'App\Controllers\AdTrackController@click');
 $router->get('/api/ad-slots', 'App\Controllers\AdTrackController@slots');
 $router->get('/subtitles/release/{group}', 'App\Controllers\MovieController@showReleaseGroup');
@@ -194,6 +193,7 @@ $router->get('/subtitles/{imdbId}/{slug}/{langSlug}', 'App\Controllers\MovieCont
 $router->get('/subtitles/{imdbId}/{slug}', 'App\Controllers\MovieController@show');
 $router->get('/subtitles/{imdbId}', 'App\Controllers\MovieController@show');
 $router->get('/download', 'App\Controllers\MovieController@download');
+$router->get('/cron/sync', 'App\Controllers\CronController@sync');
 $router->get('/sitemap.xml', 'App\Controllers\SeoController@sitemapIndex');
 $router->get('/sitemap-pages.xml', 'App\Controllers\SeoController@sitemapPages');
 $router->get('/sitemap-media-{page}.xml', 'App\Controllers\SeoController@sitemapMedia');
@@ -207,6 +207,7 @@ $router->get('/admin', 'App\Controllers\AdminController@dashboard');
 $router->post('/admin/settings', 'App\Controllers\AdminController@saveSettings');
 $router->post('/admin/clear-cache', 'App\Controllers\AdminController@clearCache');
 $router->post('/admin/test-apis', 'App\Controllers\AdminController@testApis');
+$router->post('/admin/sync-imdb', 'App\Controllers\AdminController@syncImdbNow');
 
 $router->dispatch($requestMethod, $requestUri, [
     'basePath'  => $basePath,

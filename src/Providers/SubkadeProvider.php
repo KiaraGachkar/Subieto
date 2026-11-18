@@ -153,11 +153,11 @@ final class SubkadeProvider implements SubtitleProviderInterface
             return null;
         }
 
-        if (preg_match('#href=["']([^"']+\.(?:zip|rar|srt)(?:\?[^"']*)?)["']#i', $res['body'], $m)) {
+        if (preg_match('#href=["\']([^"\']+\.(?:zip|rar|srt)(?:\?[^"\']*)?)["\']#i', $res['body'], $m)) {
             return HttpClient::absolutize($detailUrl, html_entity_decode($m[1], ENT_QUOTES, 'UTF-8'));
         }
 
-        if (preg_match('#href=["']([^"']*(?:/download|/dl/|get-sub|dl_sub)[^"']*)["']#i', $res['body'], $m)) {
+        if (preg_match('#href=["\']([^"\']*(?:/download|/dl/|get-sub|dl_sub)[^"\']*)["\']#i', $res['body'], $m)) {
             return HttpClient::absolutize($detailUrl, html_entity_decode($m[1], ENT_QUOTES, 'UTF-8'));
         }
 

@@ -154,13 +154,16 @@ $hueColor = static function (string $code): string {
 
             <!-- Season Selector Pills -->
             <?php if ($media->mediaType === 'tv' && !empty($availableSeasons)): ?>
-                <div class="head__x frow" role="group" aria-label="<?= $isFa ? 'فصل‌ها' : 'Seasons' ?>">
-                    <a href="<?= View::e($baseMediaUrl) ?>" class="ftab" aria-pressed="<?= $activeSeason === null ? 'true' : 'false' ?>">
-                        <?= $isFa ? 'همه فصل‌ها' : 'All seasons' ?>
+                <div class="head__x" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px" role="group" aria-label="<?= $isFa ? 'فصل‌ها' : 'Seasons' ?>">
+                    <a href="<?= View::e($baseMediaUrl) ?>" class="<?= $activeSeason === null ? 'lchip on' : 'lchip' ?>">
+                        <span><?= $isFa ? 'همه فصل‌ها' : 'All Seasons' ?></span>
+                        <u><?= (int) $totalSubsCount ?></u>
                     </a>
                     <?php foreach ($availableSeasons as $sNum): ?>
-                        <a href="<?= View::e($baseMediaUrl . '/season-' . $sNum) ?>" class="ftab" aria-pressed="<?= $activeSeason === $sNum ? 'true' : 'false' ?>">
-                            <?= $isFa ? "فصل {$sNum}" : "Season {$sNum}" ?>
+                        <?php $sCnt = (int) ($seasonCounts[$sNum] ?? 0); ?>
+                        <a href="<?= View::e($baseMediaUrl . '/season-' . $sNum) ?>" class="<?= $activeSeason === $sNum ? 'lchip on' : 'lchip' ?>">
+                            <span><?= $isFa ? "فصل {$sNum}" : "Season {$sNum}" ?></span>
+                            <?php if ($sCnt > 0): ?><u><?= $sCnt ?></u><?php endif; ?>
                         </a>
                     <?php endforeach; ?>
                 </div>

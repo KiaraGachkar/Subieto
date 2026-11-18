@@ -73,6 +73,10 @@ final class ProxyDownloadService
         }
 
         if ($response['status'] < 200 || $response['status'] >= 300 || $response['body'] === '') {
+            if (in_array($response['status'], [404, 410], true)) {
+                $repo = new SubtitleRepository($this->pdo, $this->prefix, dirname(__DIR__, 2) . '/storage');
+                $repo->deactivateUrl($rawUrl);
+            }
             error_log('[proxy-download] Fetch failed for ' . $sourceHost . ' (status ' . $response['status'] . ')');
             http_response_code(502);
             header('Content-Type: text/plain; charset=utf-8');
