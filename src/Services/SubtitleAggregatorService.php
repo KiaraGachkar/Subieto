@@ -106,7 +106,7 @@ final class SubtitleAggregatorService
                         }
                     }
                     if ($provider instanceof Subf2mProvider && $provider->isConfigured() && $title !== '') {
-                        foreach ($provider->searchSeries($title, $year, 12) as $item) {
+                        foreach ($provider->searchSeries($title, $year, 12, $season) as $item) {
                             $all[] = $item;
                         }
                     }

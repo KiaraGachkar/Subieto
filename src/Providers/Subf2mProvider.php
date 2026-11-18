@@ -275,13 +275,13 @@ final class Subf2mProvider implements SubtitleProviderInterface
      *
      * @return SubtitleItem[]
      */
-    public function searchSeries(string $title, string $year = '', int $maxPages = 5): array
+    public function searchSeries(string $title, string $year = '', int $maxPages = 5, ?int $season = null): array
     {
         if (!$this->isConfigured() || trim($title) === '' || !class_exists(DOMDocument::class)) {
             return [];
         }
 
-        $cacheKey = 'subf2m_series_v2_' . md5(strtolower(trim($title)) . '|' . trim($year));
+        $cacheKey = 'subf2m_series_v3_' . md5(strtolower(trim($title)) . '|' . trim($year) . '|' . ($season ?? 'all'));
         if ($this->cache !== null) {
             $cached = $this->cache->get($cacheKey);
             if (is_array($cached)) {
@@ -333,9 +333,14 @@ final class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        // Fetch all season pages in parallel!
+        // Step 1: fetch the search-result pages. On Subf2m a series page first lists its
+        // seasons; only the season pages list the actual subtitles.
         $batchReqs = [];
         foreach (array_keys($paths) as $path) {
+            $pathSeason = $this->seasonFromSlug(substr($path, strlen('/subtitles/')));
+            if ($season !== null && $pathSeason !== null && $pathSeason !== $season) {
+                continue; // a different season's page, not needed
+            }
             $batchReqs[$path] = [
                 'url'     => self::BASE_URL . $path,
                 'headers' => $this->browserHeaders(),
@@ -345,20 +350,64 @@ final class Subf2mProvider implements SubtitleProviderInterface
 
         $items = [];
         $seen = [];
-        foreach ($this->http->getJsonBatch($batchReqs, 7) as $resp) {
-            $html = is_array($resp) ? (string) ($resp['_html'] ?? '') : '';
-            if ($html === '') {
-                continue;
-            }
+        $seasonPaths = []; // path => season number, discovered on series pages
+        $collect = function (string $html, ?int $pageSeason) use (&$items, &$seen): int {
+            $added = 0;
             foreach ($this->extractSubtitlesFromDetailHtml($html) as $item) {
                 if (isset($seen[$item->id])) {
                     continue;
                 }
+                if ($item->season === null && $pageSeason !== null) {
+                    $item->season = $pageSeason; // season pack: take the season from the page itself
+                }
                 $seen[$item->id] = true;
                 $items[] = $item;
+                $added++;
             }
-            if (count($items) >= 400) {
-                break;
+            return $added;
+        };
+
+        foreach ($this->http->getJsonBatch($batchReqs, 7) as $path => $resp) {
+            $html = is_array($resp) ? (string) ($resp['_html'] ?? '') : '';
+            if ($html === '') {
+                continue;
+            }
+            $slug = substr((string) $path, strlen('/subtitles/'));
+            $pageSeason = $this->seasonFromSlug($slug);
+            if ($collect($html, $pageSeason) > 0) {
+                continue; // this page already is a season page with subtitles
+            }
+            // No subtitles here: it's the season list. Collect the season links.
+            foreach ($this->extractSeasonLinks($html, $slug) as $sPath => $sNum) {
+                if ($season !== null && $sNum !== $season) {
+                    continue;
+                }
+                if (!isset($paths[$sPath])) {
+                    $seasonPaths[$sPath] = $sNum;
+                }
+            }
+        }
+
+        // Step 2: fetch the season pages (the requested one, or all of them).
+        if ($seasonPaths !== []) {
+            asort($seasonPaths);
+            $seasonPaths = array_slice($seasonPaths, 0, 20, true);
+            $seasonReqs = [];
+            foreach ($seasonPaths as $sPath => $sNum) {
+                $seasonReqs[$sPath] = [
+                    'url'     => self::BASE_URL . $sPath,
+                    'headers' => $this->browserHeaders(),
+                    'rawHtml' => true,
+                ];
+            }
+            foreach ($this->http->getJsonBatch($seasonReqs, 7) as $sPath => $resp) {
+                $html = is_array($resp) ? (string) ($resp['_html'] ?? '') : '';
+                if ($html !== '') {
+                    $collect($html, $seasonPaths[$sPath] ?? null);
+                }
+                if (count($items) >= 600) {
+                    break;
+                }
             }
         }
 
@@ -366,6 +415,63 @@ final class Subf2mProvider implements SubtitleProviderInterface
             $this->cache->set($cacheKey, array_map(static fn(SubtitleItem $s) => $s->toArray(), $items), $items === [] ? 900 : 86400);
         }
         return $items;
+    }
+
+    /**
+     * Season number from a Subf2m slug such as "game-of-thrones-first-season",
+     * "the-bear-3rd-season" or "show-season-4". Null when the slug is not a season page.
+     */
+    private function seasonFromSlug(string $slug): ?int
+    {
+        static $words = [
+            'first' => 1, 'second' => 2, 'third' => 3, 'fourth' => 4, 'fifth' => 5, 'sixth' => 6,
+            'seventh' => 7, 'eighth' => 8, 'ninth' => 9, 'tenth' => 10, 'eleventh' => 11, 'twelfth' => 12,
+            'thirteenth' => 13, 'fourteenth' => 14, 'fifteenth' => 15, 'sixteenth' => 16, 'seventeenth' => 17,
+            'eighteenth' => 18, 'nineteenth' => 19, 'twentieth' => 20,
+        ];
+        $slug = strtolower($slug);
+        if (preg_match('/(?:^|-)(' . implode('|', array_keys($words)) . ')-season(?:-|$)/', $slug, $m)) {
+            return $words[$m[1]];
+        }
+        if (preg_match('/(?:^|-)(\d{1,2})(?:st|nd|rd|th)-season(?:-|$)/', $slug, $m)) {
+            return (int) $m[1];
+        }
+        if (preg_match('/(?:^|-)season-(\d{1,2})(?:-|$)/', $slug, $m)) {
+            return (int) $m[1];
+        }
+        return null;
+    }
+
+    /**
+     * Season links on a series page: "/subtitles/<series>-<nth>-season" => season number.
+     *
+     * @return array<string, int>
+     */
+    private function extractSeasonLinks(string $html, string $pageSlug): array
+    {
+        // Base slug of the series: strip any trailing "-<nth>-season" part and a trailing year.
+        $base = preg_replace('/-(?:[a-z]+|\d{1,2}(?:st|nd|rd|th))-season.*$/', '', strtolower($pageSlug)) ?: strtolower($pageSlug);
+        $base = preg_replace('/-(?:19|20)\d{2}$/', '', $base) ?: $base;
+
+        libxml_use_internal_errors(true);
+        $dom = new DOMDocument();
+        $dom->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_NONET);
+        libxml_clear_errors();
+        $xpath = new DOMXPath($dom);
+
+        $out = [];
+        foreach ($xpath->query('//a[starts-with(@href,"/subtitles/")]') ?: [] as $a) {
+            $href = trim((string) $a->getAttribute('href'));
+            if (!preg_match('#^/subtitles/([a-z0-9-]+)$#i', $href, $m)) {
+                continue;
+            }
+            $num = $this->seasonFromSlug($m[1]);
+            if ($num === null || !str_starts_with(strtolower($m[1]), $base)) {
+                continue;
+            }
+            $out[$href] = $num;
+        }
+        return $out;
     }
 
     /**
