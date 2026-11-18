@@ -38,7 +38,7 @@ set_exception_handler(static function (Throwable $e): void {
         header('Content-Type: text/plain; charset=utf-8');
         header('Cache-Control: no-store');
     }
-    echo 'Internal Server Error';
+    echo get_class($e) . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine();
 });
 
 $basePath = is_dir(dirname(__DIR__) . '/subieto/src')
