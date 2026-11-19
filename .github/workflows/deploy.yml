@@ -1,69 +1,60 @@
-name: Deploy to cPanel (Split Public & Private Core)
+name: Deploy Subieto to cPanel (SSH/SFTP Port 22)
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 concurrency:
-  group: deploy
-  cancel-in-progress: false
-
-env:
-  CORE_DIR: "subieto"       # هسته خصوصی پروژه بیرون از وب‌روت (~/subieto)
-  WEB_DIR: "public_html"    # پوشه عمومی دامنه (~/public_html)
-  SFTP_PORT: "22"
+  group: deploy-production
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Setup PHP
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2 & Composer
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.1'
-          extensions: pdo, pdo_mysql, curl, json, mbstring
+          php-version: '8.2'
+          extensions: pdo_mysql, curl, mbstring, zip, iconv
           tools: composer:v2
 
-      - name: Install dependencies (production)
-        run: composer install --no-dev -o --no-interaction --prefer-dist
+      - name: Install production dependencies
+        run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 
-      - name: Install lftp
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+      - name: Install sshpass & rsync
+        run: sudo apt-get update && sudo apt-get install -y sshpass rsync
 
-      - name: Upload Core & Public via SFTP
+      - name: Deploy public/ and app core via SSH (Port 22)
         env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          SSHPASS: ${{ secrets.FTP_PASSWORD }}
+          SSH_HOST: ${{ secrets.FTP_SERVER }}
+          SSH_USER: ${{ secrets.FTP_USERNAME }}
         run: |
-          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "sftp://${FTP_SERVER}:${SFTP_PORT}" -e "
-            set sftp:auto-confirm yes;
-            set ftp:list-options -a;
-            set net:max-retries 2;
-            set net:timeout 20;
+          SSH_OPTS="ssh -p 22 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
-            # 1. آپلود هسته خصوصی پروژه در ~/subieto (بیرون از public_html)
-            mirror -R --verbose --parallel=4 \
-              -x '^\.git' \
-              -x '^\.github' \
-              -x '^public/' \
-              -x '^storage/' \
-              -x '^config/database\.php$' \
-              -x '^README\.md$' \
-              -x '^composer\.lock$' \
-              ./ ${CORE_DIR}/;
+          # Ensure target directories exist
+          sshpass -e $SSH_OPTS "$SSH_USER@$SSH_HOST" "mkdir -p ~/public_html ~/subieto"
 
-            # اطمینان از وجود پوشه‌های مورد نیاز در ~/subieto
-            mkdir -p ${CORE_DIR}/config;
-            mkdir -p ${CORE_DIR}/storage/cache;
-            mkdir -p ${CORE_DIR}/storage/pages;
-            mkdir -p ${CORE_DIR}/storage/logs;
+          # 1. Deploy public/ to ~/public_html/
+          sshpass -e rsync -az -e "$SSH_OPTS" \
+            --exclude='.git*' \
+            --exclude='.well-known/' \
+            --exclude='cgi-bin/' \
+            ./public/ "$SSH_USER@$SSH_HOST:~/public_html/"
 
-            # 2. آپلود فقط محتوای public/ (شامل index.php, .htaccess, assets) در ~/public_html
-            mirror -R --verbose --parallel=4 \
-              ./public/ ${WEB_DIR}/;
-
-            quit"
+          # 2. Deploy app core to ~/subieto/ (keeps live DB config & storage intact)
+          sshpass -e rsync -az -e "$SSH_OPTS" \
+            --exclude='.git*' \
+            --exclude='.github/' \
+            --exclude='public/' \
+            --exclude='config/database.php' \
+            --exclude='storage/' \
+            --exclude='node_modules/' \
+            ./ "$SSH_USER@$SSH_HOST:~/subieto/"
