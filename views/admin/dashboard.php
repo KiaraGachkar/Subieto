@@ -431,6 +431,17 @@ $adSlotsMeta = [
                             <input type="text" name="opensubtitles_api_key" dir="ltr" value="<?= View::e($config['apis.opensubtitles_api_key'] ?? '') ?>" placeholder="Optional" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5 font-mono">
                         </div>
                     </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs pt-3 border-t border-[#efeae1]">
+                        <div>
+                            <label class="block font-bold text-[#6c655a] mb-1">Telegram Bot Token (BotFather)</label>
+                            <input type="text" name="telegram_bot_token" dir="ltr" value="<?= View::e($config['telegram.bot_token'] ?? '') ?>" placeholder="123456:ABC-DEF..." class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5 font-mono">
+                        </div>
+                        <div>
+                            <label class="block font-bold text-[#6c655a] mb-1">Telegram Webhook Secret (Optional)</label>
+                            <input type="text" name="telegram_webhook_secret" dir="ltr" value="<?= View::e($config['telegram.webhook_secret'] ?? '') ?>" placeholder="my_secret_token" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5 font-mono">
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-[#6c655a] font-mono" dir="ltr">Webhook URL: <?= View::e(\App\Services\SeoHelper::getBaseUrl() . '/api/telegram-webhook') ?></div>
                 </div>
             </div>
 

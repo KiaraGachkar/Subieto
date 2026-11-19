@@ -24,7 +24,8 @@ final class RateLimiter
 
     public function allow(string $action, int $maxHits, int $windowSeconds = 60, bool $failOpen = true): bool
     {
-        $win = intdiv(time(), max(1, $windowSeconds));
+        $safeWindow = max(1, $windowSeconds);
+        $win = (intdiv(time(), $safeWindow) + 1) * $safeWindow;
         $key = hash('sha256', ClientIp::get() . '|' . $action . '|' . $win);
 
         if (function_exists('apcu_enabled') && apcu_enabled()) {
@@ -92,7 +93,7 @@ final class RateLimiter
     public function cleanupOldWindows(): void
     {
         try {
-            $cutoff = intdiv(time() - 3600, 60);
+            $cutoff = time();
             $stmt = $this->pdo->prepare("DELETE FROM `{$this->prefix}rate_hits` WHERE `win` < :cutoff");
             $stmt->execute([':cutoff' => $cutoff]);
         } catch (Throwable) {

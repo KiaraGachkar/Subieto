@@ -6,15 +6,17 @@ define('APP_SECURE_BOOT', true);
 
 $GLOBALS['SB_T0']    = microtime(true);
 $GLOBALS['SB_TIMES'] = [];
-header_register_callback(static function (): void {
-    $times = $GLOBALS['SB_TIMES'] ?? [];
-    $times['total'] = microtime(true) - ($GLOBALS['SB_T0'] ?? microtime(true));
-    $parts = [];
-    foreach ($times as $name => $seconds) {
-        $parts[] = $name . ';dur=' . round($seconds * 1000, 1);
-    }
-    header('Server-Timing: ' . implode(', ', $parts));
-});
+if (getenv('SUBIETO_DEBUG') === '1' || in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true)) {
+    header_register_callback(static function (): void {
+        $times = $GLOBALS['SB_TIMES'] ?? [];
+        $times['total'] = microtime(true) - ($GLOBALS['SB_T0'] ?? microtime(true));
+        $parts = [];
+        foreach ($times as $name => $seconds) {
+            $parts[] = $name . ';dur=' . round($seconds * 1000, 1);
+        }
+        header('Server-Timing: ' . implode(', ', $parts));
+    });
+}
 
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
@@ -38,7 +40,7 @@ set_exception_handler(static function (Throwable $e): void {
         header('Content-Type: text/plain; charset=utf-8');
         header('Cache-Control: no-store');
     }
-    echo get_class($e) . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine();
+    echo 'Internal Server Error';
 });
 
 $basePath = is_dir(dirname(__DIR__) . '/subieto/src')
@@ -125,9 +127,13 @@ if ($installer->isInstalled() && in_array($requestMethod, ['GET', 'HEAD'], true)
         if (SeoHelper::isTrustedHost()) {
             $locale = LocaleService::resolvePublicLocale();
             $geo    = LocaleService::isIranVisitor() ? 'ir' : 'gl';
-            $queryParams = [];
-            parse_str((string) (parse_url($requestUri, PHP_URL_QUERY) ?? ''), $queryParams);
-            $queryPart = $queryParams !== [] ? '?' . md5(http_build_query($queryParams)) : '';
+            $queryPart = '';
+            if ($requestPath === '/search') {
+                $qVal = trim((string) ($_GET['q'] ?? ''));
+                if ($qVal !== '') {
+                    $queryPart = '?' . md5(mb_strtolower($qVal));
+                }
+            }
             $hostKey  = strtolower(explode(':', (string) ($_SERVER['HTTP_HOST'] ?? ''))[0]);
             $cacheKey = $requestPath . $queryPart . ':' . $locale . ':' . $geo . ':' . $hostKey;
             $GLOBALS['SB_TIMES']['cache'] = microtime(true) - $GLOBALS['SB_T0'];
@@ -184,7 +190,10 @@ if (!$installer->isInstalled()) {
 // Public & SEO Routes
 $router->get('/', 'App\Controllers\HomeController@index');
 $router->get('/search', 'App\Controllers\SearchController@search');
+$router->get('/api/suggest', 'App\Controllers\SearchController@suggest');
 $router->post('/api/ad-click', 'App\Controllers\AdTrackController@click');
+$router->post('/api/sub-vote', 'App\Controllers\VoteController@vote');
+$router->post('/api/telegram-webhook', 'App\Controllers\TelegramController@webhook');
 $router->get('/api/ad-slots', 'App\Controllers\AdTrackController@slots');
 $router->get('/subtitles/release/{group}', 'App\Controllers\MovieController@showReleaseGroup');
 $router->get('/subtitles/{imdbId}/{slug}/season-{season}', 'App\Controllers\MovieController@showSeason');

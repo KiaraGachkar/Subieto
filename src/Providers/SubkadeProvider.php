@@ -10,6 +10,7 @@ use App\Core\HttpClient;
 use App\Core\SettingsManager;
 use App\DTOs\SubtitleItem;
 use DOMDocument;
+use App\Services\ReleaseParser;
 use DOMXPath;
 
 defined('APP_SECURE_BOOT') or exit;
@@ -275,7 +276,7 @@ final class SubkadeProvider implements SubtitleProviderInterface
             }
             $releaseName = trim(preg_replace('/\s+/', ' ', $releaseName) ?: $fallbackTitle);
 
-            [$season, $episode] = $this->extractSeasonEpisode($releaseName . ' ' . $contextText, $requestedSeason ?? $pageSeason);
+            [$season, $episode] = ReleaseParser::extractSeasonEpisode($releaseName . ' ' . $contextText, $requestedSeason ?? $pageSeason);
 
             $safeBase = preg_replace('/[^a-zA-Z0-9._-]+/', '_', $releaseName) ?: ('subkade_' . $idx);
             $ext = preg_match('/\.(zip|rar|srt|ass|vtt)(?:\?|$)/i', $abs, $em) ? ('.' . strtolower($em[1])) : '.zip';
@@ -288,7 +289,7 @@ final class SubkadeProvider implements SubtitleProviderInterface
                 languageLabel: 'Persian',
                 releaseName: $releaseName,
                 translator: $this->extractTranslator($contextText),
-                qualityTag: $this->detectQuality($releaseName . ' ' . $contextText),
+                qualityTag: ReleaseParser::detectQuality($releaseName . ' ' . $contextText),
                 downloadUrl: $dlUrl,
                 fileName: substr($safeBase, 0, 120) . $ext,
                 season: $season,
@@ -298,26 +299,6 @@ final class SubkadeProvider implements SubtitleProviderInterface
         }
 
         return $items;
-    }
-
-    /**
-     * @return array{0: ?int, 1: ?int}
-     */
-    private function extractSeasonEpisode(string $text, ?int $fallbackSeason = null): array
-    {
-        if (preg_match('/S(\d{1,2})\s*E(\d{1,3})/i', $text, $m)) {
-            return [(int) $m[1], (int) $m[2]];
-        }
-        if (preg_match('/فصل\s*(\d{1,2}).{0,15}قسمت\s*(\d{1,3})/u', $text, $m)) {
-            return [(int) $m[1], (int) $m[2]];
-        }
-        if (preg_match('/(?:Season|فصل)\s*(\d{1,2})/iu', $text, $m)) {
-            return [(int) $m[1], null];
-        }
-        if (preg_match('/\bS(\d{1,2})\b/i', $text, $m)) {
-            return [(int) $m[1], null];
-        }
-        return [$fallbackSeason, null];
     }
 
     private function detectSeasonFromText(string $html, bool $allowLoose = true): ?int
@@ -337,18 +318,6 @@ final class SubkadeProvider implements SubtitleProviderInterface
             return trim($m[1]);
         }
         return 'Subkade';
-    }
-
-    private function detectQuality(string $release): string
-    {
-        $upper = strtoupper($release);
-        return match (true) {
-            str_contains($upper, 'BLURAY'), str_contains($upper, 'BDRIP'), str_contains($upper, 'BRRIP') => 'BluRay',
-            str_contains($upper, 'WEB-DL'), str_contains($upper, 'WEBDL'), str_contains($upper, 'WEBRIP') => 'WEB-DL',
-            str_contains($upper, 'HDRIP'), str_contains($upper, 'DVDRIP') => 'HDRip',
-            str_contains($upper, 'HDTV') => 'HDTV',
-            default => 'All',
-        };
     }
 
     /**

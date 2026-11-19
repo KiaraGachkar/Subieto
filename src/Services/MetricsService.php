@@ -421,13 +421,14 @@ final class MetricsService
         try {
             $this->ensureLangsColumn();
             $stmt = $this->pdo->prepare(
-                "INSERT INTO `{$this->prefix}indexed_media` (`imdb_id`, `slug`, `title`, `persian_title`, `media_type`, `year`, `seasons_json`, `langs_json`)
-                 VALUES (:imdb, :slug, :title, :fa_title, :type, :year, :seasons, :langs)
+                "INSERT INTO `{$this->prefix}indexed_media` (`imdb_id`, `slug`, `title`, `persian_title`, `media_type`, `year`, `poster_url`, `seasons_json`, `langs_json`)
+                 VALUES (:imdb, :slug, :title, :fa_title, :type, :year, :poster, :seasons, :langs)
                  ON DUPLICATE KEY UPDATE
                     `slug` = VALUES(`slug`),
                     `title` = VALUES(`title`),
                     `persian_title` = IF(VALUES(`persian_title`) != '', VALUES(`persian_title`), `persian_title`),
                     `year` = VALUES(`year`),
+                    `poster_url` = IF(VALUES(`poster_url`) != '', VALUES(`poster_url`), `poster_url`),
                     `seasons_json` = IF(VALUES(`seasons_json`) != '', VALUES(`seasons_json`), `seasons_json`),
                     `langs_json` = IF(VALUES(`langs_json`) != '', VALUES(`langs_json`), `langs_json`)"
             );
@@ -438,6 +439,7 @@ final class MetricsService
                 ':fa_title' => substr($media->persianTitle, 0, 250),
                 ':type'     => $media->mediaType === 'tv' ? 'tv' : 'movie',
                 ':year'     => substr($media->year, 0, 10),
+                ':poster'   => substr($media->posterUrl, 0, 500),
                 ':seasons'  => $seasonsJson,
                 ':langs'    => $langsJson,
             ]);
@@ -453,7 +455,7 @@ final class MetricsService
             return;
         }
         $checked = true;
-        $flagFile = dirname($this->bufferFile) . '/cache/.schema_langs_ok';
+        $flagFile = dirname($this->bufferFile) . '/cache/.schema_langs_poster_v56_ok';
         if (is_file($flagFile)) {
             return;
         }
@@ -461,6 +463,10 @@ final class MetricsService
             $col = $this->pdo->query("SHOW COLUMNS FROM `{$this->prefix}indexed_media` LIKE 'langs_json'");
             if ($col !== false && $col->fetch() === false) {
                 $this->pdo->exec("ALTER TABLE `{$this->prefix}indexed_media` ADD COLUMN `langs_json` VARCHAR(500) NOT NULL DEFAULT '' AFTER `seasons_json`");
+            }
+            $colP = $this->pdo->query("SHOW COLUMNS FROM `{$this->prefix}indexed_media` LIKE 'poster_url'");
+            if ($colP !== false && $colP->fetch() === false) {
+                $this->pdo->exec("ALTER TABLE `{$this->prefix}indexed_media` ADD COLUMN `poster_url` VARCHAR(500) NOT NULL DEFAULT '' AFTER `year`");
             }
             @file_put_contents($flagFile, '1');
         } catch (Throwable) {

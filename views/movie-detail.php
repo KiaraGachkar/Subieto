@@ -113,7 +113,7 @@ $hueColor = static function (string $code): string {
             <div class="pv pv--md" style="--h:<?= $mediaHue ?>">
                 <div class="pv__bg"></div>
                 <div class="pv__fb"><span class="pv__fb-y"><?= View::e($media->year) ?></span><span class="pv__fb-t" dir="ltr"><?= View::e($media->title) ?></span></div>
-                <img src="<?= View::e($media->posterUrl) ?>" alt="<?= View::e($media->title) ?>" width="400" height="600" fetchpriority="high" onerror="this.style.display='none'">
+                <img src="<?= View::e($media->posterUrl) ?>" alt="<?= View::e($media->title) ?>" width="400" height="600" fetchpriority="high" referrerpolicy="no-referrer" data-imdb="<?= View::e($media->imdbId) ?>">
             </div>
         </div>
 
@@ -152,22 +152,7 @@ $hueColor = static function (string $code): string {
                 <p class="head__s" dir="ltr"><?= View::e($media->overview) ?></p>
             <?php endif; ?>
 
-            <!-- Season Selector Pills -->
-            <?php if ($media->mediaType === 'tv' && !empty($availableSeasons)): ?>
-                <div class="head__x" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px" role="group" aria-label="<?= $isFa ? 'فصل‌ها' : 'Seasons' ?>">
-                    <a href="<?= View::e($baseMediaUrl) ?>" class="<?= $activeSeason === null ? 'lchip on' : 'lchip' ?>">
-                        <span><?= $isFa ? 'همه فصل‌ها' : 'All Seasons' ?></span>
-                        <u><?= (int) $totalSubsCount ?></u>
-                    </a>
-                    <?php foreach ($availableSeasons as $sNum): ?>
-                        <?php $sCnt = (int) ($seasonCounts[$sNum] ?? 0); ?>
-                        <a href="<?= View::e($baseMediaUrl . '/season-' . $sNum) ?>" class="<?= $activeSeason === $sNum ? 'lchip on' : 'lchip' ?>">
-                            <span><?= $isFa ? "فصل {$sNum}" : "Season {$sNum}" ?></span>
-                            <?php if ($sCnt > 0): ?><u><?= $sCnt ?></u><?php endif; ?>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
+
         </div>
 
         <?php if ($sidebarAd !== ''): ?>
@@ -176,6 +161,49 @@ $hueColor = static function (string $code): string {
             </aside>
         <?php endif; ?>
     </div>
+
+    <!-- TV Series Season Selector Section (Prominent Season Cards + Quick Filter) -->
+    <?php if ($media->mediaType === 'tv' && !empty($availableSeasons)): ?>
+        <section aria-label="<?= $isFa ? 'انتخاب فصل سریال' : 'Select Season' ?>" style="margin-top:24px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-panel);padding:18px 20px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+                <div>
+                    <span class="lbl"><?= $isFa ? 'فصل‌های سریال' : 'Series Seasons' ?></span>
+                    <h2 style="margin:3px 0 0;font-size:16px;font-weight:600">
+                        <?= $activeSeason !== null
+                            ? ($isFa ? "در حال نمایش زیرنویس‌های فصل {$activeSeason}" : "Showing Season {$activeSeason} Subtitles")
+                            : ($isFa ? 'ابتدا فصل مورد نظر را انتخاب کنید' : 'Choose a season to view its episodes & subtitles') ?>
+                    </h2>
+                </div>
+                <a href="<?= View::e($baseMediaUrl) ?>" class="<?= $activeSeason === null ? 'lchip on' : 'lchip' ?>">
+                    <span><?= $isFa ? 'همه فصل‌ها' : 'All Seasons' ?></span>
+                    <u><?= (int) $totalSubsCount ?></u>
+                </a>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px">
+                <?php foreach ($availableSeasons as $sNum): ?>
+                    <?php
+                        $sCnt = (int) ($seasonCounts[$sNum] ?? 0);
+                        $isCurrentSeason = ($activeSeason === $sNum);
+                    ?>
+                    <a
+                        href="<?= View::e($baseMediaUrl . '/season-' . $sNum) ?>"
+                        style="display:flex;flex-direction:column;justify-content:space-between;padding:12px 14px;border-radius:14px;border:1px solid <?= $isCurrentSeason ? 'var(--green)' : 'var(--firm)' ?>;background:<?= $isCurrentSeason ? 'var(--green-wash)' : 'var(--paper)' ?>;transition:border-color .15s,transform .15s"
+                    >
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+                            <span class="mono" style="font-size:11px;font-weight:700;color:<?= $isCurrentSeason ? 'var(--green-deep)' : 'var(--muted)' ?>">S<?= str_pad((string) $sNum, 2, '0', STR_PAD_LEFT) ?></span>
+                            <?php if ($sCnt > 0): ?>
+                                <span class="chip" style="<?= $isCurrentSeason ? 'background:var(--green);color:#fff;border-color:var(--green)' : '' ?>"><?= $sCnt ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <div style="margin-top:6px;font-size:13.5px;font-weight:600;color:<?= $isCurrentSeason ? 'var(--green-deep)' : 'var(--ink)' ?>">
+                            <?= $isFa ? "فصل {$sNum}" : "Season {$sNum}" ?>
+                        </div>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </section>
+    <?php endif; ?>
 
     <!-- Language Pills + Release Search + Quality Filter + Match My Video File -->
     <div class="tools">
@@ -218,6 +246,15 @@ $hueColor = static function (string $code): string {
                     placeholder="<?= $isFa ? 'فیلتر نسخه‌ها — 1080p، BluRay، YTS...' : 'Filter releases — 1080p, BluRay, YTS...' ?>"
                 >
             </div>
+
+            <?php if ($media->mediaType === 'tv' && $activeSeason === null && !empty($availableSeasons)): ?>
+                <div class="frow" role="group" aria-label="<?= $isFa ? 'فیلتر سریع فصل' : 'Quick season filter' ?>">
+                    <button type="button" class="ftab" @click="seasonFilter = 'all'" :aria-pressed="String(seasonFilter === 'all')"><?= $isFa ? 'همه فصل‌ها' : 'All seasons' ?></button>
+                    <?php foreach ($availableSeasons as $sNum): ?>
+                        <button type="button" class="ftab" @click="seasonFilter = '<?= (int) $sNum ?>'" :aria-pressed="String(seasonFilter === '<?= (int) $sNum ?>')"><?= $isFa ? "فصل {$sNum}" : "S" . str_pad((string) $sNum, 2, '0', STR_PAD_LEFT) ?></button>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
 
             <?php if ($media->mediaType === 'tv' && !empty($episodes)): ?>
                 <div class="frow" role="group" aria-label="<?= $isFa ? 'قسمت' : 'Episode' ?>">
@@ -284,11 +321,14 @@ $hueColor = static function (string $code): string {
                     $searchIndex = mb_strtolower($sub->releaseName . ' ' . $sub->languageLabel . ' ' . $sub->languageCode . ' ' . $sub->translator . ' ' . $sub->qualityTag);
                     $codeUpper = strtoupper(substr($sub->languageCode !== '' ? $sub->languageCode : 'UN', 0, 2));
                     $rowKey = 'dl_' . $idx;
+                    $voteHash = hash('sha256', strtolower($media->imdbId) . '|' . $sub->downloadUrl);
+                    $netVotes = $sub->upvotes - $sub->downvotes;
                 ?>
                 <div
                     data-lang="<?= View::e($sub->languageCode) ?>"
                     data-quality="<?= View::e($sub->qualityTag) ?>"
-                    data-episode="<?= $sub->episode !== null ? (int) $sub->episode : '' ?>"
+                    data-season="<?= ($sub->season !== null && $sub->season > 0) ? (int) $sub->season : '' ?>"
+                    data-episode="<?= ($sub->episode !== null && $sub->episode > 0) ? (int) $sub->episode : '' ?>"
                     data-search="<?= View::e($searchIndex) ?>"
                     x-show="matchesRow($el)"
                     :class="(isBestMatch($el.dataset.search || '') ? 'best ' : '') + (downloaded['<?= $rowKey ?>'] ? 'done' : '')"
@@ -312,6 +352,10 @@ $hueColor = static function (string $code): string {
                                 <i class="sep"></i>
                                 <span><?= View::e($sub->translator) ?></span>
                             <?php endif; ?>
+                            <?php if ($netVotes >= 1): ?>
+                                <i class="sep"></i>
+                                <span class="tagx" style="background:var(--green-wash);color:var(--green-deep);border-color:var(--green);font-weight:600">✓ <?= $isFa ? 'تأیید شده · هماهنگ' : 'Synced' ?></span>
+                            <?php endif; ?>
                             <em x-show="isBestMatch($el.closest('[data-search]')?.dataset.search || '')" x-cloak>
                                 ✓ <?= $isFa ? 'هماهنگ با فایل شما' : 'Best match' ?>
                             </em>
@@ -319,6 +363,24 @@ $hueColor = static function (string $code): string {
                     </div>
 
                     <div class="srow__a">
+                        <div class="vgrp" aria-label="<?= $isFa ? 'رأی هماهنگی زیرنویس' : 'Sync feedback' ?>">
+                            <button
+                                type="button"
+                                class="vbtn"
+                                :class="voted['<?= $voteHash ?>'] === 'up' ? 'on-up' : ''"
+                                :disabled="Boolean(voted['<?= $voteHash ?>'])"
+                                @click="castVote('<?= $voteHash ?>', 'up')"
+                                title="<?= $isFa ? 'هماهنگ بود' : 'In sync' ?>"
+                            >👍 <span x-text="voteCounts['<?= $voteHash ?>']?.up ?? <?= (int) $sub->upvotes ?>"><?= (int) $sub->upvotes ?></span></button>
+                            <button
+                                type="button"
+                                class="vbtn"
+                                :class="voted['<?= $voteHash ?>'] === 'down' ? 'on-dn' : ''"
+                                :disabled="Boolean(voted['<?= $voteHash ?>'])"
+                                @click="castVote('<?= $voteHash ?>', 'down')"
+                                title="<?= $isFa ? 'ناهماهنگ بود' : 'Out of sync' ?>"
+                            >👎 <span x-text="voteCounts['<?= $voteHash ?>']?.down ?? <?= (int) $sub->downvotes ?>"><?= (int) $sub->downvotes ?></span></button>
+                        </div>
                         <a
                             href="<?= View::e($dlHref) ?>"
                             @click="markDownloaded('<?= $rowKey ?>', <?= View::e(json_encode($sub->releaseName)) ?>)"
@@ -383,7 +445,7 @@ $hueColor = static function (string $code): string {
                             <span class="pv pv--md" style="--h:<?= $simHue ?>">
                                 <span class="pv__bg"></span>
                                 <span class="pv__fb"><span class="pv__fb-y"><?= View::e($sim->year) ?></span><span class="pv__fb-t" dir="ltr"><?= View::e($sim->title) ?></span></span>
-                                <img src="<?= View::e($sim->posterUrl) ?>" alt="<?= View::e($sim->title) ?>" width="400" height="600" loading="lazy" onerror="this.style.display='none'">
+                                <img src="<?= View::e($sim->posterUrl) ?>" alt="<?= View::e($sim->title) ?>" width="400" height="600" loading="lazy" referrerpolicy="no-referrer" data-imdb="<?= View::e($sim->imdbId) ?>">
                                 <?php if ($sim->voteAverage > 0): ?><span class="pv__rate">★ <?= number_format($sim->voteAverage, 1) ?></span><?php endif; ?>
                             </span>
                         </span>
@@ -411,14 +473,18 @@ $hueColor = static function (string $code): string {
             langSearch: '',
             releaseFilter: '',
             qualityFilter: 'all',
+            seasonFilter: 'all',
             episodeFilter: 'all',
             matchedRelease: '',
             matchedTokens: [],
             downloaded: {},
+            voted: JSON.parse(localStorage.getItem('sb_votes_v1') || '{}'),
+            voteCounts: {},
             toastVisible: false,
             toastMessage: '',
             init() {
                 this.$watch('lang', () => this.ensureQualityFilter());
+                this.$watch('seasonFilter', () => this.ensureQualityFilter());
                 this.$watch('episodeFilter', () => this.ensureQualityFilter());
                 this.$watch('releaseFilter', () => this.ensureQualityFilter());
             },
@@ -440,6 +506,7 @@ $hueColor = static function (string $code): string {
                     const q = el.dataset.quality || '';
                     if (q === '') return;
                     if (this.lang !== 'all' && this.lang !== el.dataset.lang) return;
+                    if (this.seasonFilter !== 'all' && el.dataset.season !== '' && this.seasonFilter !== el.dataset.season) return;
                     if (this.episodeFilter !== 'all' && this.episodeFilter !== el.dataset.episode) return;
                     if (!(el.dataset.search || '').includes(needle)) return;
                     set.add(q);
@@ -469,15 +536,33 @@ $hueColor = static function (string $code): string {
                 return hits >= Math.min(2, this.matchedTokens.length);
             },
             matchesRow(el) {
-                const rowLang = el.dataset.lang || '';
-                const rowQual = el.dataset.quality || '';
-                const rowEp   = el.dataset.episode || '';
+                const rowLang   = el.dataset.lang || '';
+                const rowQual   = el.dataset.quality || '';
+                const rowSeason = el.dataset.season || '';
+                const rowEp     = el.dataset.episode || '';
                 const rowSearch = el.dataset.search || '';
-                const langOk = this.lang === 'all' || this.lang === rowLang;
-                const qualOk = this.qualityFilter === 'all' || this.qualityFilter === rowQual;
-                const epOk   = this.episodeFilter === 'all' || this.episodeFilter === rowEp;
-                const textOk = rowSearch.includes(this.releaseFilter.toLowerCase().trim());
-                return langOk && qualOk && epOk && textOk;
+                const langOk   = this.lang === 'all' || this.lang === rowLang;
+                const qualOk   = this.qualityFilter === 'all' || this.qualityFilter === rowQual;
+                const seasonOk = this.seasonFilter === 'all' || rowSeason === '' || this.seasonFilter === rowSeason;
+                const epOk     = this.episodeFilter === 'all' || this.episodeFilter === rowEp;
+                const textOk   = rowSearch.includes(this.releaseFilter.toLowerCase().trim());
+                return langOk && qualOk && seasonOk && epOk && textOk;
+            },
+            async castVote(hash, dir) {
+                if (this.voted[hash]) return;
+                this.voted[hash] = dir;
+                localStorage.setItem('sb_votes_v1', JSON.stringify(this.voted));
+                try {
+                    const res = await fetch('/api/sub-vote', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ hash: hash, imdb: <?= json_encode($media->imdbId) ?>, vote: dir })
+                    });
+                    const data = await res.json();
+                    if (data && data.ok) {
+                        this.voteCounts[hash] = { up: data.up, down: data.down };
+                    }
+                } catch (e) {}
             },
             markDownloaded(key, name) {
                 this.downloaded[key] = true;

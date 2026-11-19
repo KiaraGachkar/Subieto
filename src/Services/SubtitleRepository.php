@@ -40,7 +40,7 @@ final class SubtitleRepository
         }
         $checked = true;
 
-        $flagFile = $this->storageDir . '/cache/.schema_subtitles_v49_ok';
+        $flagFile = $this->storageDir . '/cache/.schema_subtitles_v58_auto_ok';
         if (is_file($flagFile)) {
             return;
         }
@@ -69,7 +69,21 @@ final class SubtitleRepository
                     UNIQUE KEY `uk_url_hash` (`url_hash`),
                     INDEX `idx_imdb_active` (`imdb_id`, `is_active`),
                     INDEX `idx_imdb_season` (`imdb_id`, `season`),
+                    INDEX `idx_imdb_active_season` (`imdb_id`, `is_active`, `season`),
+                    INDEX `idx_imdb_active_lang` (`imdb_id`, `is_active`, `language_code`),
                     INDEX `idx_lang` (`language_code`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+            );
+
+            $this->pdo->exec(
+                "CREATE TABLE IF NOT EXISTS `{$this->prefix}subtitle_votes` (
+                    `url_hash` CHAR(64) NOT NULL,
+                    `imdb_id` VARCHAR(20) NOT NULL DEFAULT '',
+                    `upvotes` INT UNSIGNED NOT NULL DEFAULT 0,
+                    `downvotes` INT UNSIGNED NOT NULL DEFAULT 0,
+                    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (`url_hash`),
+                    INDEX `idx_imdb` (`imdb_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
 
@@ -85,15 +99,40 @@ final class SubtitleRepository
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
 
-            if (!is_dir(dirname($flagFile))) {
-                @mkdir(dirname($flagFile), 0755, true);
+            // Auto-migrate existing tables & indexes safely (replaces manual optimize.sql)
+            $safeExec = function (string $sql): void {
+                try {
+                    $this->pdo->exec($sql);
+                } catch (Throwable) {
+                    // Index/column already exists or table not ready; safe to ignore
+                }
+            };
+
+            $safeExec("UPDATE `{$this->prefix}subtitles` SET `season` = NULL WHERE `season` IS NOT NULL AND `season` <= 0");
+            $safeExec("UPDATE `{$this->prefix}subtitles` SET `episode` = NULL WHERE `episode` IS NOT NULL AND `episode` <= 0");
+            $safeExec("ALTER TABLE `{$this->prefix}subtitles` ADD INDEX `idx_imdb_active_season` (`imdb_id`, `is_active`, `season`)");
+            $safeExec("ALTER TABLE `{$this->prefix}subtitles` ADD INDEX `idx_imdb_active_lang` (`imdb_id`, `is_active`, `language_code`)");
+            $safeExec("ALTER TABLE `{$this->prefix}indexed_media` ADD COLUMN `poster_url` VARCHAR(500) NOT NULL DEFAULT '' AFTER `year`");
+            $safeExec("ALTER TABLE `{$this->prefix}indexed_media` ADD INDEX `idx_type_year` (`media_type`, `year`)");
+            $safeExec("ALTER TABLE `{$this->prefix}download_stats` ADD INDEX `idx_dl_lang_provider` (`language_code`, `provider`)");
+            $safeExec("DELETE FROM `{$this->prefix}api_cache` WHERE `expires_at` < " . time());
+
+            // Only write schema lock if poster_url column is verified present
+            $colCheck = $this->pdo->query("SHOW COLUMNS FROM `{$this->prefix}indexed_media` LIKE 'poster_url'");
+            if ($colCheck !== false && $colCheck->fetch() !== false) {
+                if (!is_dir(dirname($flagFile))) {
+                    @mkdir(dirname($flagFile), 0755, true);
+                }
+                @file_put_contents($flagFile, '1');
             }
-            @file_put_contents($flagFile, '1');
         } catch (Throwable $e) {
             error_log('[subtitle-repo] schema migration warning: ' . $e->getMessage());
         }
     }
 
+    /**
+     * @return SubtitleItem[]
+     */
     public function getByImdbId(string $imdbId, ?int $season = null): array
     {
         $cleanImdb = strtolower(trim($imdbId));
@@ -108,21 +147,21 @@ final class SubtitleRepository
                      WHERE `imdb_id` = :imdb AND `is_active` = 1 AND `season` = :s"
                 );
                 $chk->execute([':imdb' => $cleanImdb, ':s' => $season]);
-                if ((int) $chk->fetchColumn() === 0) {
+                if ((int) $chk->fetchColumn() < 3) {
                     return [];
                 }
 
                 $stmt = $this->pdo->prepare(
                     "SELECT * FROM `{$this->prefix}subtitles`
                      WHERE `imdb_id` = :imdb AND `is_active` = 1 AND (`season` = :s OR `season` IS NULL)
-                     ORDER BY `id` ASC LIMIT 600"
+                     ORDER BY `id` ASC LIMIT 1000"
                 );
                 $stmt->execute([':imdb' => $cleanImdb, ':s' => $season]);
             } else {
                 $stmt = $this->pdo->prepare(
                     "SELECT * FROM `{$this->prefix}subtitles`
                      WHERE `imdb_id` = :imdb AND `is_active` = 1
-                     ORDER BY `id` ASC LIMIT 600"
+                     ORDER BY `id` ASC LIMIT 1000"
                 );
                 $stmt->execute([':imdb' => $cleanImdb]);
             }
@@ -140,8 +179,8 @@ final class SubtitleRepository
                     qualityTag: (string) $r['quality_tag'],
                     downloadUrl: (string) $r['download_url'],
                     fileName: (string) $r['file_name'],
-                    season: $r['season'] !== null ? (int) $r['season'] : null,
-                    episode: $r['episode'] !== null ? (int) $r['episode'] : null,
+                    season: ($r['season'] !== null && (int) $r['season'] > 0) ? (int) $r['season'] : null,
+                    episode: ($r['episode'] !== null && (int) $r['episode'] > 0) ? (int) $r['episode'] : null,
                     hearingImpaired: ((int) $r['hearing_impaired']) === 1
                 );
             }
@@ -151,6 +190,12 @@ final class SubtitleRepository
         }
     }
 
+
+    /**
+     * Returns map of season_number => active subtitle count for a TV series.
+     *
+     * @return array<int, int>
+     */
     public function getSeasonCounts(string $imdbId): array
     {
         $cleanImdb = strtolower(trim($imdbId));
@@ -176,6 +221,9 @@ final class SubtitleRepository
         }
     }
 
+    /**
+     * @param SubtitleItem[] $items
+     */
     public function saveItems(string $imdbId, array $items, bool $markComplete = false): int
     {
         $cleanImdb = strtolower(trim($imdbId));
@@ -186,44 +234,58 @@ final class SubtitleRepository
         $saved = 0;
         try {
             if ($items !== []) {
-                $stmt = $this->pdo->prepare(
-                    "INSERT INTO `{$this->prefix}subtitles`
-                        (`url_hash`, `imdb_id`, `provider`, `language_code`, `language_label`, `release_name`, `translator`, `quality_tag`, `download_url`, `file_name`, `season`, `episode`, `hearing_impaired`, `is_active`)
-                     VALUES
-                        (:uhash, :imdb, :prov, :lcode, :llabel, :rel, :trans, :qual, :dl, :fname, :season, :ep, :hi, 1)
-                     ON DUPLICATE KEY UPDATE
-                        `release_name` = IF(VALUES(`release_name`) != '', VALUES(`release_name`), `release_name`),
-                        `translator` = IF(VALUES(`translator`) != '', VALUES(`translator`), `translator`),
-                        `quality_tag` = IF(VALUES(`quality_tag`) != 'All', VALUES(`quality_tag`), `quality_tag`),
-                        `season` = COALESCE(VALUES(`season`), `season`),
-                        `episode` = COALESCE(VALUES(`episode`), `episode`),
-                        `is_active` = 1"
-                );
-
+                $validItems = [];
+                $seenHashes = [];
                 foreach ($items as $item) {
                     if ($item->downloadUrl === '') {
                         continue;
                     }
                     $urlHash = hash('sha256', $cleanImdb . '|' . $item->downloadUrl);
-                    $stmt->execute([
-                        ':uhash'  => $urlHash,
-                        ':imdb'   => substr($cleanImdb, 0, 20),
-                        ':prov'   => substr($item->provider, 0, 40),
-                        ':lcode'  => substr($item->languageCode, 0, 10),
-                        ':llabel' => substr($item->languageLabel, 0, 60),
-                        ':rel'    => substr($item->releaseName, 0, 250),
-                        ':trans'  => substr($item->translator, 0, 100),
-                        ':qual'   => substr($item->qualityTag, 0, 30),
-                        ':dl'     => $item->downloadUrl,
-                        ':fname'  => substr($item->fileName, 0, 250),
-                        ':season' => ($item->season !== null && $item->season > 0) ? $item->season : null,
-                        ':ep'     => ($item->episode !== null && $item->episode > 0) ? $item->episode : null,
-                        ':hi'     => $item->hearingImpaired ? 1 : 0,
-                    ]);
-                    $saved++;
+                    if (isset($seenHashes[$urlHash])) {
+                        continue;
+                    }
+                    $seenHashes[$urlHash] = true;
+                    $validItems[] = [$urlHash, $item];
+                }
+
+                $updateSql = " ON DUPLICATE KEY UPDATE
+                    `release_name` = IF(VALUES(`release_name`) != '', VALUES(`release_name`), `release_name`),
+                    `translator` = IF(VALUES(`translator`) != '', VALUES(`translator`), `translator`),
+                    `quality_tag` = IF(VALUES(`quality_tag`) != 'All', VALUES(`quality_tag`), `quality_tag`),
+                    `season` = COALESCE(VALUES(`season`), `season`),
+                    `episode` = COALESCE(VALUES(`episode`), `episode`),
+                    `is_active` = 1";
+
+                $baseSql = "INSERT INTO `{$this->prefix}subtitles`
+                    (`url_hash`, `imdb_id`, `provider`, `language_code`, `language_label`, `release_name`, `translator`, `quality_tag`, `download_url`, `file_name`, `season`, `episode`, `hearing_impaired`, `is_active`)
+                 VALUES ";
+
+                foreach (array_chunk($validItems, 100) as $chunk) {
+                    $placeholders = [];
+                    $params = [];
+                    foreach ($chunk as [$uHash, $item]) {
+                        $placeholders[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)';
+                        $params[] = $uHash;
+                        $params[] = substr($cleanImdb, 0, 20);
+                        $params[] = substr($item->provider, 0, 40);
+                        $params[] = substr($item->languageCode, 0, 10);
+                        $params[] = substr($item->languageLabel, 0, 60);
+                        $params[] = substr($item->releaseName, 0, 250);
+                        $params[] = substr($item->translator, 0, 100);
+                        $params[] = substr($item->qualityTag, 0, 30);
+                        $params[] = $item->downloadUrl;
+                        $params[] = substr($item->fileName, 0, 250);
+                        $params[] = ($item->season !== null && $item->season > 0) ? $item->season : null;
+                        $params[] = ($item->episode !== null && $item->episode > 0) ? $item->episode : null;
+                        $params[] = $item->hearingImpaired ? 1 : 0;
+                        $saved++;
+                    }
+                    $stmt = $this->pdo->prepare($baseSql . implode(',', $placeholders) . $updateSql);
+                    $stmt->execute($params);
                 }
             }
 
+            // Update sync status
             $cntStmt = $this->pdo->prepare(
                 "SELECT COUNT(*) AS `tot`, SUM(CASE WHEN `language_code` = 'fa' THEN 1 ELSE 0 END) AS `fa_cnt`
                  FROM `{$this->prefix}subtitles` WHERE `imdb_id` = :imdb AND `is_active` = 1"
@@ -270,9 +332,13 @@ final class SubtitleRepository
             $stmt = $this->pdo->prepare("UPDATE `{$this->prefix}subtitles` SET `is_active` = 0 WHERE `download_url` = :dl");
             $stmt->execute([':dl' => $downloadUrl]);
         } catch (Throwable) {
+            // Ignore
         }
     }
 
+    /**
+     * @return array{total: int, persian: int, titles: int}
+     */
     public function getArchiveStats(): array
     {
         try {
@@ -295,10 +361,17 @@ final class SubtitleRepository
         }
     }
 
+    /**
+     * Picks next batch of titles needing archive completion (prioritizing missing Persian demand,
+     * incomplete series, and stale/unsynced indexed media).
+     *
+     * @return string[]
+     */
     public function getNextSyncQueue(int $limit = 5): array
     {
         $queue = [];
         try {
+            // 1. High-demand titles missing Persian subtitles
             $s1 = $this->pdo->prepare(
                 "SELECT m.`imdb_id`
                  FROM `{$this->prefix}missing_subtitles` m
@@ -314,6 +387,7 @@ final class SubtitleRepository
                 $queue[(string) $id] = true;
             }
 
+            // 2. Indexed titles never synced or marked incomplete
             if (count($queue) < $limit) {
                 $rem = $limit - count($queue);
                 $s2 = $this->pdo->prepare(
@@ -332,11 +406,18 @@ final class SubtitleRepository
                 }
             }
         } catch (Throwable) {
+            // Ignore
         }
 
         return array_slice(array_keys($queue), 0, $limit);
     }
 
+    /**
+     * Performs a thorough, deep sync for a single IMDb title (used by Cron and Admin manual sync).
+     * Starts with Subzone.ir (primary Subf2m mirror) and fails over to Subf2m.co + Subkade.ir.
+     *
+     * @return array{imdb_id: string, title: string, fetched: int, persian: int}
+     */
     public function syncSingleTitle(
         string $imdbId,
         HttpClient $http,
@@ -382,10 +463,12 @@ final class SubtitleRepository
                     $all[] = $item;
                 }
             }
+            // Primary mirror: Subzone.ir
             $szSubs = $subzone->isConfigured() ? $subzone->searchSeries($media->title, $media->year, 15, null) : [];
             foreach ($szSubs as $item) {
                 $all[] = $item;
             }
+            // Failover: Subf2m.co if Subzone returned few/no results
             if (count($szSubs) < 3 && $subf2m->isConfigured()) {
                 foreach ($subf2m->searchSeries($media->title, $media->year, 15, null) as $item) {
                     $all[] = $item;
@@ -397,10 +480,12 @@ final class SubtitleRepository
                 }
             }
         } else {
+            // Primary mirror: Subzone.ir
             $szSubs = $subzone->isConfigured() ? $subzone->searchByTitle($media->title, $media->year) : [];
             foreach ($szSubs as $item) {
                 $all[] = $item;
             }
+            // Failover: Subf2m.co if Subzone returned < 2 results
             if (count($szSubs) < 2 && $subf2m->isConfigured()) {
                 foreach ($subf2m->searchByTitle($media->title, $media->year) as $item) {
                     $all[] = $item;
@@ -433,5 +518,67 @@ final class SubtitleRepository
             'fetched' => $savedCount,
             'persian' => $faCount,
         ];
+    }
+
+    /**
+     * Returns map of url_hash => ['up' => int, 'down' => int] for an IMDb title.
+     *
+     * @return array<string, array{up: int, down: int}>
+     */
+    public function getVotesMapForImdb(string $imdbId): array
+    {
+        $cleanImdb = strtolower(trim($imdbId));
+        if ($cleanImdb === '') {
+            return [];
+        }
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT `url_hash`, `upvotes`, `downvotes`
+                 FROM `{$this->prefix}subtitle_votes`
+                 WHERE `imdb_id` = :imdb"
+            );
+            $stmt->execute([':imdb' => $cleanImdb]);
+            $map = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $map[(string) $row['url_hash']] = [
+                    'up'   => (int) $row['upvotes'],
+                    'down' => (int) $row['downvotes'],
+                ];
+            }
+            return $map;
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Records an upvote ('up') or downvote ('down') for a subtitle hash.
+     *
+     * @return array{up: int, down: int}
+     */
+    public function recordVote(string $urlHash, string $imdbId, string $vote): array
+    {
+        $col = $vote === 'up' ? 'upvotes' : 'downvotes';
+        try {
+            $stmt = $this->pdo->prepare(
+                "INSERT INTO `{$this->prefix}subtitle_votes` (`url_hash`, `imdb_id`, `{$col}`)
+                 VALUES (:h, :imdb, 1)
+                 ON DUPLICATE KEY UPDATE `{$col}` = `{$col}` + 1"
+            );
+            $stmt->execute([
+                ':h'    => substr($urlHash, 0, 64),
+                ':imdb' => substr(strtolower(trim($imdbId)), 0, 20),
+            ]);
+
+            $sel = $this->pdo->prepare("SELECT `upvotes`, `downvotes` FROM `{$this->prefix}subtitle_votes` WHERE `url_hash` = :h LIMIT 1");
+            $sel->execute([':h' => substr($urlHash, 0, 64)]);
+            $row = $sel->fetch(PDO::FETCH_ASSOC);
+            return [
+                'up'   => (int) ($row['upvotes'] ?? 0),
+                'down' => (int) ($row['downvotes'] ?? 0),
+            ];
+        } catch (Throwable) {
+            return ['up' => 0, 'down' => 0];
+        }
     }
 }

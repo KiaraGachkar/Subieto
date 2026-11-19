@@ -40,7 +40,7 @@ $hueFromId = static fn(string $id): int => (abs(crc32($id)) % 360);
                             <span class="pv" style="--h:<?= $itemHue ?>">
                                 <span class="pv__bg"></span>
                                 <span class="pv__fb"><span class="pv__fb-y"><?= View::e($item->year) ?></span><span class="pv__fb-t" dir="ltr"><?= View::e($item->title) ?></span></span>
-                                <img src="<?= View::e($item->posterUrl) ?>" alt="<?= View::e($item->title) ?>" width="400" height="600" loading="lazy" onerror="this.style.display='none'">
+                                <img src="<?= View::e($item->posterUrl) ?>" alt="<?= View::e($item->title) ?>" width="400" height="600" loading="lazy" referrerpolicy="no-referrer" data-imdb="<?= View::e($item->imdbId) ?>">
                                 <?php if ($item->voteAverage > 0): ?>
                                     <span class="pv__rate">★ <?= number_format($item->voteAverage, 1) ?></span>
                                 <?php endif; ?>

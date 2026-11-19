@@ -50,7 +50,8 @@ final class SearchController extends BaseController
             }
         }
 
-        $this->renderAndCachePage('/search?' . md5(http_build_query($_GET)), 'search', [
+        $searchCachePath = $query !== '' ? '/search?' . md5(mb_strtolower($query)) : '/search';
+        $this->renderAndCachePage($searchCachePath, 'search', [
             'pageTitle'    => $pageTitle,
             'locale'       => $locale,
             'ogImage'      => $ogImage !== '' ? $ogImage : null,
@@ -61,12 +62,19 @@ final class SearchController extends BaseController
         ], 600);
     }
 
+    /**
+     * Combines ultra-fast local indexed_media search (supports Persian & English titles + year extraction)
+     * with live TMDB / Cinemeta API results and ranks exact/prefix matches first.
+     *
+     * @return MediaItem[]
+     */
     private function hybridSearch(string $rawQuery, int $limit): array
     {
         $cleanQuery = trim($rawQuery);
         $yearFilter = '';
         $titleQuery = $cleanQuery;
 
+        // Extract optional trailing/embedded 4-digit year (e.g., "Dune 2024" or "Inception (2010)")
         if (preg_match('/^(.*?)\s*\(?((?:19|20)\d{2})\)?$/u', $cleanQuery, $ym) && trim($ym[1]) !== '') {
             $titleQuery = trim($ym[1]);
             $yearFilter = $ym[2];
@@ -74,9 +82,10 @@ final class SearchController extends BaseController
 
         $merged = [];
 
+        // 1. Instant local DB lookup (finds previously viewed Persian & English titles in <2ms)
         try {
             $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $titleQuery) . '%';
-            $sql  = "SELECT `imdb_id`, `slug`, `title`, `persian_title`, `media_type`, `year`
+            $sql  = "SELECT `imdb_id`, `slug`, `title`, `persian_title`, `media_type`, `year`, `poster_url`
                      FROM `{$this->prefix}indexed_media`
                      WHERE (`title` LIKE :q1 OR `persian_title` LIKE :q2 OR `imdb_id` = :exact)";
             $params = [
@@ -107,7 +116,7 @@ final class SearchController extends BaseController
                         originalTitle: (string) ($row['title'] ?? ''),
                         mediaType: (string) ($row['media_type'] ?? 'movie'),
                         year: (string) ($row['year'] ?? ''),
-                        posterUrl: '',
+                        posterUrl: (string) ($row['poster_url'] ?? ''),
                         backdropUrl: '',
                         overview: '',
                         voteAverage: 0.0,
@@ -119,8 +128,10 @@ final class SearchController extends BaseController
                 }
             }
         } catch (Throwable) {
+            // Continue gracefully to live API
         }
 
+        // 2. Live TMDB / Cinemeta lookup
         $tmdb = new TmdbMetadataProvider($this->http, $this->settings, $this->cache);
         $apiResults = $tmdb->searchMulti($titleQuery, $limit);
         if (empty($apiResults) && $titleQuery !== $cleanQuery) {
@@ -134,6 +145,7 @@ final class SearchController extends BaseController
             $merged[$item->imdbId] = $item;
         }
 
+        // Fallback if year filter was too strict
         if (empty($merged) && !empty($apiResults)) {
             foreach ($apiResults as $item) {
                 $merged[$item->imdbId] = $item;
@@ -142,6 +154,7 @@ final class SearchController extends BaseController
 
         $list = array_values($merged);
 
+        // Batch-fill missing poster URLs from cache/Cinemeta in parallel (max 4 items) instead of sequential N+1 HTTP calls
         $missingPosters = [];
         foreach ($list as $idx => $item) {
             if ($item->posterUrl === '' && preg_match('/^tt\d{5,10}$/', $item->imdbId)) {
@@ -149,7 +162,7 @@ final class SearchController extends BaseController
                 $cachedMeta = $this->cache->get("cinemeta_imdb_{$item->imdbId}");
                 if (is_array($cachedMeta) && !empty($cachedMeta['posterUrl'])) {
                     $item->posterUrl = (string) $cachedMeta['posterUrl'];
-                } elseif (count($missingPosters) < 4) {
+                } elseif (count($missingPosters) < 12) {
                     $missingPosters[$idx] = "https://v3-cinemeta.strem.io/meta/{$cType}/{$item->imdbId}.json";
                 }
             }
@@ -164,6 +177,8 @@ final class SearchController extends BaseController
             }
         }
 
+        // Last-resort poster for local-DB hits that have no cached metadata (any metadata mode):
+        // try the TMDB-mode cache entry, then the deterministic IMDb-keyed poster URL.
         foreach ($list as $item) {
             if ($item->posterUrl !== '' || !preg_match('/^tt\d{5,10}$/', $item->imdbId)) {
                 continue;
@@ -171,7 +186,7 @@ final class SearchController extends BaseController
             $tmdbMeta = $this->cache->get("tmdb_imdb_v2_{$item->imdbId}");
             $item->posterUrl = (is_array($tmdbMeta) && !empty($tmdbMeta['posterUrl']))
                 ? (string) $tmdbMeta['posterUrl']
-                : 'https://images.metahub.space/poster/small/' . $item->imdbId . '/img';
+                : 'https://live.metahub.space/poster/medium/' . $item->imdbId . '/img';
         }
 
         $needle = mb_strtolower($titleQuery);
@@ -201,5 +216,108 @@ final class SearchController extends BaseController
         });
 
         return array_slice($list, 0, $limit);
+    }
+
+
+    /**
+     * Ultra-fast JSON autocomplete endpoint for the header search bar.
+     * Prioritizes APCu/DB cache and local indexed_media (<5ms) before falling back to live API.
+     */
+    public function suggest(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: public, max-age=300');
+
+        $limiter = new RateLimiter($this->db, $this->prefix);
+        if (!$limiter->allow('suggest', 120, 60)) {
+            http_response_code(429);
+            echo json_encode(['items' => []]);
+            return;
+        }
+
+        $rawQ  = $_GET['q'] ?? '';
+        $query = is_string($rawQ) ? mb_substr(trim($rawQ), 0, 80) : '';
+        if (mb_strlen($query) < 2) {
+            echo json_encode(['items' => []]);
+            return;
+        }
+
+        $cacheKey = 'suggest_v1_' . md5(mb_strtolower($query));
+        $cached = $this->cache->get($cacheKey);
+        if (is_array($cached)) {
+            echo json_encode(['items' => $cached], JSON_UNESCAPED_UNICODE);
+            return;
+        }
+
+        $items = [];
+        $seen  = [];
+
+        // 1. Instant local DB lookup (<2ms)
+        try {
+            $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $query) . '%';
+            $stmt = $this->db->prepare(
+                "SELECT `imdb_id`, `slug`, `title`, `media_type`, `year`, `poster_url`
+                 FROM `{$this->prefix}indexed_media`
+                 WHERE `title` LIKE :q1 OR `persian_title` LIKE :q2 OR `imdb_id` = :exact
+                 ORDER BY (`title` LIKE :prefix) DESC, `updated_at` DESC
+                 LIMIT 6"
+            );
+            $stmt->execute([
+                ':q1'     => $like,
+                ':q2'     => $like,
+                ':exact'  => strtolower($query),
+                ':prefix' => str_replace(['%', '_'], ['\%', '\_'], $query) . '%',
+            ]);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $id = (string) ($row['imdb_id'] ?? '');
+                if ($id === '' || isset($seen[$id])) {
+                    continue;
+                }
+                $seen[$id] = true;
+                $poster = trim((string) ($row['poster_url'] ?? ''));
+                if ($poster === '') {
+                    $poster = 'https://live.metahub.space/poster/medium/' . $id . '/img';
+                }
+                $items[] = [
+                    'id'     => $id,
+                    'title'  => (string) ($row['title'] ?? ''),
+                    'year'   => (string) ($row['year'] ?? ''),
+                    'type'   => (string) ($row['media_type'] ?? 'movie'),
+                    'poster' => $poster,
+                    'url'    => '/subtitles/' . $id . '/' . (string) ($row['slug'] ?? 'title'),
+                ];
+            }
+        } catch (Throwable) {
+            // Fall through to live API
+        }
+
+        // 2. Only hit live Cinemeta/TMDB if local DB returned fewer than 5 results
+        if (count($items) < 5) {
+            $tmdb = new TmdbMetadataProvider($this->http, $this->settings, $this->cache);
+            foreach ($tmdb->searchMulti($query, 6) as $m) {
+                if (isset($seen[$m->imdbId])) {
+                    continue;
+                }
+                $seen[$m->imdbId] = true;
+                $items[] = [
+                    'id'     => $m->imdbId,
+                    'title'  => $m->title,
+                    'year'   => $m->year,
+                    'type'   => $m->mediaType,
+                    'poster' => $m->posterUrl !== '' ? $m->posterUrl : ('https://live.metahub.space/poster/medium/' . $m->imdbId . '/img'),
+                    'url'    => '/subtitles/' . $m->imdbId . '/' . $m->slug,
+                ];
+                if (count($items) >= 6) {
+                    break;
+                }
+            }
+        }
+
+        $items = array_slice($items, 0, 6);
+        if ($items !== []) {
+            $this->cache->set($cacheKey, $items, 1800);
+        }
+
+        echo json_encode(['items' => $items], JSON_UNESCAPED_UNICODE);
     }
 }

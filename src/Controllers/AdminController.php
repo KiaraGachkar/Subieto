@@ -203,6 +203,8 @@ final class AdminController extends BaseController
             'apis.tmdb_api_key'                => trim((string) ($_POST['tmdb_api_key'] ?? '')),
             'apis.subdl_api_key'               => trim((string) ($_POST['subdl_api_key'] ?? '')),
             'apis.opensubtitles_api_key'       => trim((string) ($_POST['opensubtitles_api_key'] ?? '')),
+            'telegram.bot_token'               => trim((string) ($_POST['telegram_bot_token'] ?? '')),
+            'telegram.webhook_secret'          => trim((string) ($_POST['telegram_webhook_secret'] ?? '')),
             'providers.free_opensub_enabled'   => isset($_POST['free_opensub_enabled']) ? '1' : '0',
             'providers.podnapisi_enabled'      => isset($_POST['podnapisi_enabled']) ? '1' : '0',
             'providers.yify_enabled'           => isset($_POST['yify_enabled']) ? '1' : '0',

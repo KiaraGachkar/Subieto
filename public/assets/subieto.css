@@ -358,3 +358,11 @@ footer{border-block-start:1px solid var(--line);padding-block:24px 32px}
 .filtergroup .lbl{font-size:10px}
 .filtergroup .frow{gap:14px}
 .filtergroup .ftab u{margin-inline-start:5px}
+
+/* One-click Sync Vote Buttons */
+.vgrp{display:inline-flex;align-items:center;gap:4px}
+.vbtn{height:28px;padding-inline:8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-family:var(--mono);font-size:10.5px;color:var(--muted);display:inline-flex;align-items:center;gap:4px;transition:border-color .15s,background .15s,color .15s}
+.vbtn:hover:not(:disabled){border-color:var(--firm);background:var(--raise);color:var(--ink)}
+.vbtn.on-up{border-color:var(--green);background:var(--green-wash);color:var(--green-deep);font-weight:600}
+.vbtn.on-dn{border-color:var(--rust);background:color-mix(in srgb,var(--rust) 12%,var(--surface));color:var(--rust);font-weight:600}
+.vbtn:disabled{cursor:default;opacity:.85}

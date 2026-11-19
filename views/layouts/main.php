@@ -93,7 +93,7 @@ $baseP    = $urlParts['path'] ?? '/';
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/subieto.css?v=50">
+    <link rel="stylesheet" href="/assets/subieto.css?v=58">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
     <?= $headScripts ?>
 </head>
@@ -110,8 +110,8 @@ $baseP    = $urlParts['path'] ?? '/';
                 <b><?= View::e($siteTitle) ?></b>
             </a>
 
-                <div class="bar__search">
-                    <form action="/search" method="GET" role="search">
+                <div class="bar__search" x-data="liveSearch()" @click.outside="open = false">
+                    <form action="/search" method="GET" role="search" @submit="saveRecent(q)">
                         <div class="bar__pill">
                             <svg viewBox="0 0 22 22" fill="none" aria-hidden="true">
                                 <circle cx="9.6" cy="9.6" r="7" stroke="currentColor" stroke-width="1.7"/>
@@ -121,16 +121,64 @@ $baseP    = $urlParts['path'] ?? '/';
                                 id="sb-header-search"
                                 type="text"
                                 name="q"
-                                value="<?= View::e((string) ($_GET['q'] ?? '')) ?>"
+                                autocomplete="off"
+                                x-model="q"
+                                @focus="onFocus()"
+                                @input="onInput()"
+                                @keydown.arrow-down.prevent="move(1)"
+                                @keydown.arrow-up.prevent="move(-1)"
+                                @keydown.enter="onEnter($event)"
+                                @keydown.escape="open = false"
                                 aria-label="<?= $isFa ? 'جستجوی فیلم، سریال یا کد IMDb' : 'Search films, series, or IMDb ID' ?>"
                                 placeholder="<?= $isFa ? 'جستجوی فیلم، سریال یا کد IMDb...' : 'Films, series, or IMDb ID…' ?>"
                             >
-                            <span class="sp-kbd">/</span>
+                            <button type="button" class="sp-clear" x-show="q.length > 0" x-cloak @click="q = ''; items = []; open = false" aria-label="Clear">✕</button>
+                            <span class="sp-kbd" x-show="q.length === 0">/</span>
                             <button type="submit" class="sp-go-mini" aria-label="<?= $isFa ? 'جستجو' : 'Search' ?>">
                                 <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.6 8h10M8.8 4.2L12.6 8l-3.8 3.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
                         </div>
                     </form>
+
+                    <!-- Instant Autocomplete & Recent Searches Dropdown -->
+                    <div class="ac" x-show="open && (items.length > 0 || (q.trim() === '' && recent.length > 0))" x-cloak>
+                        <template x-if="q.trim() === '' && recent.length > 0">
+                            <div>
+                                <div class="ac__sec">
+                                    <span><?= $isFa ? 'جستجوهای اخیر' : 'Recent searches' ?></span>
+                                    <button type="button" @click="clearRecent()" style="font-size:10px;color:var(--muted)"><?= $isFa ? 'پاک کردن' : 'Clear' ?></button>
+                                </div>
+                                <div class="ac__recent">
+                                    <template x-for="term in recent" :key="term">
+                                        <button type="button" class="ac__rchip" @click="q = term; onInput()" x-text="term"></button>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template x-if="items.length > 0">
+                            <div class="ac__list">
+                                <template x-for="(it, idx) in items" :key="it.id">
+                                    <a
+                                        :href="it.url"
+                                        class="ac__item"
+                                        :data-active="String(idx === activeIdx)"
+                                        @mouseenter="activeIdx = idx"
+                                        @click="saveRecent(it.title)"
+                                    >
+                                        <span class="ac__thumb">
+                                            <img :src="it.poster" :alt="it.title" loading="lazy" referrerpolicy="no-referrer" :data-imdb="it.id">
+                                        </span>
+                                        <span style="min-width:0">
+                                            <b dir="ltr" x-text="it.title"></b>
+                                            <small x-text="(it.year ? it.year + ' · ' : '') + (it.type === 'tv' ? 'Series' : 'Film')"></small>
+                                        </span>
+                                        <span class="chip" x-text="it.id"></span>
+                                    </a>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
                 </div>
 
             <div class="bar__r">
@@ -192,6 +240,78 @@ $baseP    = $urlParts['path'] ?? '/';
     <?php endif; ?>
 
     <script nonce="<?= CSP_NONCE ?>">
+        function liveSearch() {
+            return {
+                q: <?= json_encode((string) ($_GET['q'] ?? '')) ?>,
+                items: [],
+                recent: JSON.parse(localStorage.getItem('sb_recent_q') || '[]'),
+                open: false,
+                activeIdx: -1,
+                timer: null,
+                ctrl: null,
+                memCache: {},
+                onFocus() {
+                    if (this.items.length > 0 || (this.q.trim() === '' && this.recent.length > 0)) {
+                        this.open = true;
+                    }
+                },
+                onInput() {
+                    clearTimeout(this.timer);
+                    const term = this.q.trim();
+                    this.activeIdx = -1;
+                    if (term.length < 2) {
+                        this.items = [];
+                        this.open = term.length === 0 && this.recent.length > 0;
+                        return;
+                    }
+                    const key = term.toLowerCase();
+                    if (this.memCache[key]) {
+                        this.items = this.memCache[key];
+                        this.open = this.items.length > 0;
+                        return;
+                    }
+                    this.timer = setTimeout(() => this.fetchSuggest(term, key), 160);
+                },
+                async fetchSuggest(term, key) {
+                    if (this.ctrl) this.ctrl.abort();
+                    this.ctrl = new AbortController();
+                    try {
+                        const res = await fetch('/api/suggest?q=' + encodeURIComponent(term), { signal: this.ctrl.signal });
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        const list = Array.isArray(data.items) ? data.items : [];
+                        this.memCache[key] = list;
+                        if (this.q.trim().toLowerCase() === key) {
+                            this.items = list;
+                            this.open = list.length > 0;
+                        }
+                    } catch (e) {}
+                },
+                move(delta) {
+                    if (!this.open || this.items.length === 0) return;
+                    this.activeIdx = (this.activeIdx + delta + this.items.length) % this.items.length;
+                },
+                onEnter(e) {
+                    if (this.open && this.activeIdx >= 0 && this.items[this.activeIdx]) {
+                        e.preventDefault();
+                        this.saveRecent(this.items[this.activeIdx].title);
+                        window.location.href = this.items[this.activeIdx].url;
+                    }
+                },
+                saveRecent(term) {
+                    const t = (term || '').trim();
+                    if (t.length < 2) return;
+                    this.recent = [t, ...this.recent.filter(x => x.toLowerCase() !== t.toLowerCase())].slice(0, 6);
+                    localStorage.setItem('sb_recent_q', JSON.stringify(this.recent));
+                },
+                clearRecent() {
+                    this.recent = [];
+                    localStorage.removeItem('sb_recent_q');
+                    this.open = false;
+                }
+            };
+        }
+
         function appShell() {
             return {
                 isDark: document.documentElement.dataset.theme === 'dark',
@@ -241,6 +361,22 @@ if ($settings->get('ads.enabled', '1') === '1') {
                 .catch(function () {});
         });
         <?php endif; ?>
+
+        // CSP-compliant poster fallback handler (replaces inline onerror attributes)
+        document.addEventListener('error', function (e) {
+            var img = e.target;
+            if (!img || img.tagName !== 'IMG') return;
+            var imdb = img.dataset ? img.dataset.imdb : '';
+            if (imdb && !img.dataset.fb) {
+                img.dataset.fb = '1';
+                var fbUrl = 'https://live.metahub.space/poster/medium/' + imdb + '/img';
+                if (img.src !== fbUrl) {
+                    img.src = fbUrl;
+                    return;
+                }
+            }
+            img.style.display = 'none';
+        }, true);
 
         window.addEventListener('keydown', function (e) {
             if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((document.activeElement && document.activeElement.tagName) || '')) {

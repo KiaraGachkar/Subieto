@@ -20,7 +20,9 @@ final class SubtitleItem
         public string $fileName,
         public ?int $season = null,
         public ?int $episode = null,
-        public bool $hearingImpaired = false
+        public bool $hearingImpaired = false,
+        public int $upvotes = 0,
+        public int $downvotes = 0
     ) {
     }
 
@@ -39,9 +41,11 @@ final class SubtitleItem
             qualityTag: (string) ($data['qualityTag'] ?? 'All'),
             downloadUrl: (string) ($data['downloadUrl'] ?? ''),
             fileName: (string) ($data['fileName'] ?? 'subtitle.srt'),
-            season: isset($data['season']) ? (int) $data['season'] : null,
-            episode: isset($data['episode']) ? (int) $data['episode'] : null,
-            hearingImpaired: (bool) ($data['hearingImpaired'] ?? false)
+            season: (isset($data['season']) && (int) $data['season'] > 0) ? (int) $data['season'] : null,
+            episode: (isset($data['episode']) && (int) $data['episode'] > 0) ? (int) $data['episode'] : null,
+            hearingImpaired: (bool) ($data['hearingImpaired'] ?? false),
+            upvotes: (int) ($data['upvotes'] ?? 0),
+            downvotes: (int) ($data['downvotes'] ?? 0)
         );
     }
 
@@ -63,6 +67,8 @@ final class SubtitleItem
             'season'          => $this->season,
             'episode'         => $this->episode,
             'hearingImpaired' => $this->hearingImpaired,
+            'upvotes'         => $this->upvotes,
+            'downvotes'       => $this->downvotes,
         ];
     }
 }

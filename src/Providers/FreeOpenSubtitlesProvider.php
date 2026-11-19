@@ -10,6 +10,7 @@ use App\Core\HttpClient;
 use App\Core\SettingsManager;
 use App\DTOs\SubtitleItem;
 use App\Services\LanguageMap;
+use App\Services\ReleaseParser;
 
 defined('APP_SECURE_BOOT') or exit;
 
@@ -105,7 +106,7 @@ final class FreeOpenSubtitlesProvider implements SubtitleProviderInterface
                 languageLabel: $lang['label'],
                 releaseName: $releaseName,
                 translator: $translator,
-                qualityTag: $this->detectQuality($releaseName),
+                qualityTag: ReleaseParser::detectQuality($releaseName),
                 downloadUrl: $dlUrl,
                 fileName: substr($safeBase, 0, 120) . '.srt',
                 season: $season,
@@ -219,14 +220,16 @@ final class FreeOpenSubtitlesProvider implements SubtitleProviderInterface
         }
 
         $items = [];
-        foreach ($this->http->getJsonBatch($requests, 8) as $epKey => $data) {
-            $parsed = $this->parseSearchResponse($data);
-            foreach ($parsed as $item) {
-                if ($item->season === null && preg_match('/^tt\d+:(\d+):(\d+)$/', (string) $epKey, $em)) {
-                    $item->season  = (int) $em[1];
-                    $item->episode = (int) $em[2];
+        foreach (array_chunk($requests, 20, true) as $reqChunk) {
+            foreach ($this->http->getJsonBatch($reqChunk, 8) as $epKey => $data) {
+                $parsed = $this->parseSearchResponse($data);
+                foreach ($parsed as $item) {
+                    if ($item->season === null && preg_match('/^tt\d+:(\d+):(\d+)$/', (string) $epKey, $em)) {
+                        $item->season  = (int) $em[1];
+                        $item->episode = (int) $em[2];
+                    }
+                    $items[] = $item;
                 }
-                $items[] = $item;
             }
         }
 
@@ -247,15 +250,4 @@ final class FreeOpenSubtitlesProvider implements SubtitleProviderInterface
         ];
     }
 
-    private function detectQuality(string $release): string
-    {
-        $upper = strtoupper($release);
-        return match (true) {
-            str_contains($upper, 'BLURAY'), str_contains($upper, 'BDRIP'), str_contains($upper, 'BRRIP') => 'BluRay',
-            str_contains($upper, 'WEB-DL'), str_contains($upper, 'WEBDL'), str_contains($upper, 'WEBRIP') => 'WEB-DL',
-            str_contains($upper, 'HDRIP'), str_contains($upper, 'DVDRIP') => 'HDRip',
-            str_contains($upper, 'HDTV') => 'HDTV',
-            default => 'All',
-        };
-    }
 }

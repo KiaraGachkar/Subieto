@@ -18,9 +18,9 @@ defined('APP_SECURE_BOOT') or exit;
 
 final class ProxyDownloadService
 {
-    private const ZIP_MAX_ENTRIES     = 50;
-    private const ZIP_MAX_ENTRY_BYTES = 2097152; // 2 MB per subtitle entry
-    private const ZIP_MAX_TOTAL_BYTES = 8388608; // 8 MB total uncompressed
+    private const ZIP_MAX_ENTRIES     = 250;
+    private const ZIP_MAX_ENTRY_BYTES = 15728640; // 15 MB per subtitle entry
+    private const ZIP_MAX_TOTAL_BYTES = 62914560; // 60 MB total uncompressed
 
     public function __construct(
         private readonly HttpClient $http,
@@ -37,6 +37,15 @@ final class ProxyDownloadService
      */
     public function deliver(string $rawUrl, string $desiredFileName, array $meta = []): void
     {
+        $detailReferer = null;
+        if (str_starts_with($rawUrl, 'subzone://')) {
+            $detailReferer = substr($rawUrl, strlen('subzone://'));
+        } elseif (str_starts_with($rawUrl, 'subf2m://')) {
+            $detailReferer = substr($rawUrl, strlen('subf2m://'));
+        } elseif (str_starts_with($rawUrl, 'subkade://')) {
+            $detailReferer = substr($rawUrl, strlen('subkade://'));
+        }
+
         $resolvedUrl = $this->resolveTargetUrl($rawUrl);
         $pinnedIp = null;
         if ($resolvedUrl === null || !$this->isAllowedDomain($resolvedUrl, $pinnedIp)) {
@@ -48,28 +57,39 @@ final class ProxyDownloadService
         $cleanFileName = $this->brandFileName($this->sanitizeFileName($desiredFileName));
 
         $browserHeaders = [
-            'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
             'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language' => 'en-US,en;q=0.9',
         ];
         $sourceHost = (string) parse_url($resolvedUrl, PHP_URL_HOST);
-        if ($sourceHost !== '') {
+        if ($detailReferer !== null && $detailReferer !== '') {
+            $browserHeaders['Referer'] = $detailReferer;
+        } elseif ($sourceHost !== '') {
             $browserHeaders['Referer'] = 'https://' . $sourceHost . '/';
         }
 
-        $response = $this->fetchPinnedHttps($resolvedUrl, 20, $pinnedIp, $browserHeaders);
+        $response = $this->fetchPinnedHttps($resolvedUrl, 25, $pinnedIp, $browserHeaders);
 
-        if ($response['status'] >= 300 && $response['status'] < 400 && !empty($response['headers']['location'])) {
-            $redirTarget = HttpClient::absolutize($resolvedUrl, (string) $response['headers']['location']);
+        // Follow up to 2 redirect hops (e.g. subzone.ir/subtitles/.../download -> media.sub-api.ir/...)
+        for ($hop = 0; $hop < 2 && $response['status'] >= 300 && $response['status'] < 400 && !empty($response['headers']['location']); $hop++) {
+            $prevUrl = $redirTarget ?? $resolvedUrl;
+            $redirTarget = HttpClient::absolutize($prevUrl, (string) $response['headers']['location']);
             $redirIp = null;
-            if ($this->isAllowedDomain($redirTarget, $redirIp)) {
-                $redirHost = (string) parse_url($redirTarget, PHP_URL_HOST);
-                $redirHeaders = $browserHeaders;
-                if ($redirHost !== '') {
-                    $redirHeaders['Referer'] = 'https://' . $redirHost . '/';
-                }
-                $response = $this->fetchPinnedHttps($redirTarget, 20, $redirIp, $redirHeaders);
+            if (!$this->isAllowedDomain($redirTarget, $redirIp)) {
+                break;
             }
+            $redirHeaders = $browserHeaders;
+            $prevHost = (string) parse_url($prevUrl, PHP_URL_HOST);
+            if ($prevHost !== '') {
+                $redirHeaders['Referer'] = 'https://' . $prevHost . '/';
+            }
+            if (!empty($response['headers']['set-cookie'])) {
+                $cookiePair = explode(';', (string) $response['headers']['set-cookie'], 2)[0];
+                if ($cookiePair !== '') {
+                    $redirHeaders['Cookie'] = $cookiePair;
+                }
+            }
+            $response = $this->fetchPinnedHttps($redirTarget, 25, $redirIp, $redirHeaders);
         }
 
         if ($response['status'] < 200 || $response['status'] >= 300 || $response['body'] === '') {
@@ -94,21 +114,32 @@ final class ProxyDownloadService
             if (!str_ends_with(strtolower($cleanFileName), '.zip')) {
                 $cleanFileName .= '.zip';
             }
-            $processedZip = $this->processZipArchive($content);
-            if ($processedZip === null) {
+            $zipResult = $this->processZipArchive($content);
+            if ($zipResult === null) {
                 error_log('[proxy-download] Rejected oversized ZIP archive: ' . $cleanFileName);
                 http_response_code(422);
                 echo 'فایل آرشیو زیرنویس بیش از حد مجاز حجیم است و قابل پردازش نیست.';
                 return;
             }
-            $content = $processedZip;
-            header('Content-Type: application/zip');
+            if ($zipResult['singleSub'] !== null) {
+                $content       = $zipResult['singleSub']['content'];
+                $cleanFileName = $this->brandFileName($this->sanitizeFileName($zipResult['singleSub']['fileName']));
+                header('Content-Type: application/x-subrip; charset=utf-8');
+            } else {
+                $content = $zipResult['zipBinary'];
+                header('Content-Type: application/zip');
+            }
         } else {
             $content = $this->normalizeToUtf8($content);
             header('Content-Type: application/x-subrip; charset=utf-8');
         }
 
         $this->recordDownload($cleanFileName, $meta);
+
+        // Clear any active output buffers (e.g. ob_gzhandler) so Content-Length matches raw binary output
+        while (ob_get_level() > 0) {
+            @ob_end_clean();
+        }
 
         header('Content-Disposition: attachment; filename="' . $cleanFileName . '"');
         header('Content-Length: ' . strlen($content));
@@ -143,25 +174,29 @@ final class ProxyDownloadService
         return true;
     }
 
-    private function processZipArchive(string $zipBinary): ?string
+    /**
+     * @return array{zipBinary: string, singleSub: ?array{content: string, fileName: string}}|null
+     */
+    private function processZipArchive(string $zipBinary): ?array
     {
+        $fallback = ['zipBinary' => $zipBinary, 'singleSub' => null];
         if (!class_exists(ZipArchive::class)) {
-            return $zipBinary;
+            return $fallback;
         }
 
         $tmpFile = tempnam(sys_get_temp_dir(), 'shzip_');
         if ($tmpFile === false) {
-            return $zipBinary;
+            return $fallback;
         }
 
         try {
             if (file_put_contents($tmpFile, $zipBinary) === false) {
-                return $zipBinary;
+                return $fallback;
             }
 
             $zip = new ZipArchive();
             if ($zip->open($tmpFile) !== true) {
-                return $zipBinary;
+                return $fallback;
             }
 
             if (!$this->zipWithinLimits($zip)) {
@@ -171,15 +206,16 @@ final class ProxyDownloadService
 
             $modified = false;
             $textSubExtensions = ['srt', 'vtt', 'ass', 'ssa'];
+            $extractedSubs = [];
 
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $entryName = $zip->getNameIndex($i);
-                if (!is_string($entryName) || str_ends_with($entryName, '/')) {
+                if (!is_string($entryName) || str_ends_with($entryName, '/') || str_starts_with(basename($entryName), '._')) {
                     continue;
                 }
 
                 $brandedEntry = $this->brandFileName($entryName);
-                if ($brandedEntry !== $entryName && $zip->renameName($i, $brandedEntry)) {
+                if ($brandedEntry !== $entryName && $zip->renameIndex($i, $brandedEntry)) {
                     $modified = true;
                     $entryName = $brandedEntry;
                 }
@@ -195,6 +231,10 @@ final class ProxyDownloadService
                 }
 
                 $processed = $this->normalizeToUtf8($rawEntry);
+                $extractedSubs[] = [
+                    'content'  => $processed,
+                    'fileName' => basename($entryName),
+                ];
 
                 if ($processed !== $rawEntry) {
                     $zip->addFromString($entryName, $processed);
@@ -204,16 +244,24 @@ final class ProxyDownloadService
 
             $zip->close();
 
+            // Auto-extract if the archive contains exactly ONE subtitle file (great for mobile & smart TVs)
+            if (count($extractedSubs) === 1) {
+                return [
+                    'zipBinary' => $zipBinary,
+                    'singleSub' => $extractedSubs[0],
+                ];
+            }
+
             if ($modified) {
                 $updated = file_get_contents($tmpFile);
                 if (is_string($updated) && $updated !== '') {
-                    return $updated;
+                    return ['zipBinary' => $updated, 'singleSub' => null];
                 }
             }
 
-            return $zipBinary;
+            return $fallback;
         } catch (Throwable) {
-            return $zipBinary;
+            return $fallback;
         } finally {
             @unlink($tmpFile);
         }
@@ -304,7 +352,7 @@ final class ProxyDownloadService
         }
 
         $matched = false;
-        foreach (['subdl.com', 'opensubtitles.com', 'opensubtitles.org', 'strem.io', 'yifysubtitles.ch', 'subf2m.co', 'podnapisi.net', 'subzone.ir', 'subkade.ir'] as $suffix) {
+        foreach (['subdl.com', 'opensubtitles.com', 'opensubtitles.org', 'strem.io', 'yifysubtitles.ch', 'subf2m.co', 'podnapisi.net', 'subzone.ir', 'subkade.ir', 'sub-api.ir'] as $suffix) {
             if ($host === $suffix || str_ends_with($host, '.' . $suffix)) {
                 $matched = true;
                 break;
@@ -329,6 +377,8 @@ final class ProxyDownloadService
                 // instead of doing a second DNS lookup. Prefer an IPv4 address.
                 if ($pinnedIp === null && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
                     $pinnedIp = $ip;
+                } elseif ($pinnedIp === null && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+                    $pinnedIp = '[' . $ip . ']';
                 }
             }
         }
@@ -347,7 +397,8 @@ final class ProxyDownloadService
     {
         $host  = (string) parse_url($url, PHP_URL_HOST);
         $ip    = ($pinnedIp !== null && $pinnedIp !== '') ? $pinnedIp : ($host !== '' ? gethostbyname($host) : '');
-        $extra = ($ip !== '' && $ip !== $host && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE))
+        $cleanIp = trim($ip, '[]');
+        $extra = ($cleanIp !== '' && $cleanIp !== $host && filter_var($cleanIp, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE))
             ? [CURLOPT_RESOLVE => [$host . ':443:' . $ip]]
             : [];
         return $this->http->request('GET', $url, $headers, null, $timeout, false, $extra);

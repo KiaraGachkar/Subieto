@@ -24,7 +24,7 @@ final class StaticPageCache
             return;
         }
 
-        header("Cache-Control: public, max-age={$maxAge}, s-maxage={$maxAge}");
+        header("Cache-Control: private, max-age=" . min($maxAge, 300));
         header('Vary: Accept-Language');
     }
 
@@ -87,6 +87,17 @@ final class StaticPageCache
 
         if (!is_dir($this->pagesDir) || !is_writable($this->pagesDir)) {
             return;
+        }
+
+        // Prevent disk/inode exhaustion on shared hosting by capping cached pages at 1500
+        if (random_int(1, 50) === 1) {
+            $files = glob($this->pagesDir . '/*.html') ?: [];
+            if (count($files) > 1500) {
+                usort($files, static fn(string $a, string $b): int => (@filemtime($a) ?: 0) <=> (@filemtime($b) ?: 0));
+                foreach (array_slice($files, 0, count($files) - 1200) as $oldFile) {
+                    @unlink($oldFile);
+                }
+            }
         }
 
         $expiresAt = time() + $ttl;

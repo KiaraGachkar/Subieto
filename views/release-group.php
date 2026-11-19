@@ -49,7 +49,7 @@ $hueFromId = static fn(string $id): int => (abs(crc32($id)) % 360);
                             <span class="pv" style="--h:<?= $mHue ?>">
                                 <span class="pv__bg"></span>
                                 <span class="pv__fb"><span class="pv__fb-y"><?= View::e($movie->year) ?></span><span class="pv__fb-t" dir="ltr"><?= View::e($movie->title) ?></span></span>
-                                <img src="<?= View::e($movie->posterUrl) ?>" alt="<?= View::e($movie->title) ?>" width="400" height="600" loading="lazy" onerror="this.style.display='none'">
+                                <img src="<?= View::e($movie->posterUrl) ?>" alt="<?= View::e($movie->title) ?>" width="400" height="600" loading="lazy" referrerpolicy="no-referrer" data-imdb="<?= View::e($movie->imdbId) ?>">
                             </span>
                         </span>
                         <span class="card__body">

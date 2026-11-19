@@ -420,8 +420,11 @@ final class TmdbMetadataProvider
         $yearRaw = (string) ($meta['releaseInfo'] ?? $meta['year'] ?? '');
         $year = preg_match('/\b(19\d{2}|20\d{2})\b/', $yearRaw, $ym) ? $ym[1] : '';
         $poster = trim((string) ($meta['poster'] ?? ''));
-        if ($poster === '') {
-            $poster = 'https://placehold.co/500x750/1e293b/94a3b8?text=No+Poster';
+        if ($poster !== '' && str_contains($poster, 'images.metahub.space')) {
+            $poster = str_replace('images.metahub.space/poster/small/', 'live.metahub.space/poster/medium/', $poster);
+        }
+        if ($poster === '' && $imdbId !== '') {
+            $poster = 'https://live.metahub.space/poster/medium/' . $imdbId . '/img';
         }
 
         return new MediaItem(
@@ -546,7 +549,7 @@ final class TmdbMetadataProvider
             year: $year,
             posterUrl: is_string($posterPath) && $posterPath !== ''
                 ? self::IMG_BASE . '/w500' . $posterPath
-                : 'https://placehold.co/500x750/1e293b/94a3b8?text=No+Poster',
+                : ($imdbId !== '' ? 'https://live.metahub.space/poster/medium/' . $imdbId . '/img' : ''),
             backdropUrl: is_string($backdropPath) && $backdropPath !== ''
                 ? self::IMG_BASE . '/w1280' . $backdropPath
                 : '',

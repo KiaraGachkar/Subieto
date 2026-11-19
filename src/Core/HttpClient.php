@@ -48,9 +48,9 @@ final class HttpClient
                 return $res;
             }
 
-            $next = self::absolutize($currentUrl, (string) $res['headers']['location']);
-            if (strtolower((string) parse_url($next, PHP_URL_SCHEME)) !== 'https') {
-                return $res; // Never downgrade HTTPS -> HTTP
+            $next = self::safeRedirect($currentUrl, (string) $res['headers']['location']);
+            if ($next === null) {
+                return $res; // Reject non-HTTPS or private/reserved IP redirects
             }
 
             if (strtolower((string) parse_url($next, PHP_URL_HOST)) !== strtolower((string) parse_url($currentUrl, PHP_URL_HOST))) {
@@ -147,6 +147,9 @@ final class HttpClient
 
         if ($body !== null) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+        }
+        if (($ca = self::caBundlePath()) !== null) {
+            curl_setopt($ch, CURLOPT_CAINFO, $ca);
         }
         if ($curlExtra !== []) {
             curl_setopt_array($ch, $curlExtra);
@@ -381,6 +384,9 @@ final class HttpClient
                         return $len;
                     },
                 ]);
+                if (($ca = self::caBundlePath()) !== null) {
+                    curl_setopt($ch, CURLOPT_CAINFO, $ca);
+                }
                 curl_multi_add_handle($mh, $ch);
                 $handles[$key] = $ch;
             }
@@ -433,5 +439,28 @@ final class HttpClient
 
         $decoded = json_decode($res['body'], true);
         return is_array($decoded) ? $decoded : null;
+    }
+
+    private static function caBundlePath(): ?string
+    {
+        static $resolved = false;
+        static $path = null;
+        if ($resolved) {
+            return $path;
+        }
+        $resolved = true;
+
+        $iniPaths = [
+            (string) ini_get('curl.cainfo'),
+            (string) ini_get('openssl.cafile'),
+        ];
+        foreach ($iniPaths as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate !== '' && is_file($candidate) && is_readable($candidate)) {
+                $path = $candidate;
+                return $path;
+            }
+        }
+        return null;
     }
 }

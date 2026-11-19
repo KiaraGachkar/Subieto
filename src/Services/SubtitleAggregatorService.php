@@ -122,7 +122,7 @@ final class SubtitleAggregatorService
 
             // Shared time budget so slow scrapers never exceed PHP/LiteSpeed limits
             @set_time_limit(60);
-            $scrapeDeadline = microtime(true) + 12.0;
+            $scrapeDeadline = microtime(true) + 35.0;
             $inBudget = static fn(): bool => microtime(true) < $scrapeDeadline;
 
             $subzone = null;
@@ -143,21 +143,22 @@ final class SubtitleAggregatorService
 
             if ($mediaType === 'tv') {
                 if ($freeOs !== null && $freeOs->isConfigured()) {
-                    foreach ($freeOs->searchSeries($imdbId, 120, $season) as $item) {
+                    foreach ($freeOs->searchSeries($imdbId, 180, $season) as $item) {
                         $all[] = $item;
                     }
                 }
                 // Primary mirror: Subzone.ir
                 $szItems = [];
                 if ($subzone !== null && $subzone->isConfigured() && $title !== '' && $inBudget()) {
-                    $szItems = $subzone->searchSeries($title, $year, 12, $season);
+                    $szItems = $subzone->searchSeries($title, $year, 25, $season);
                     foreach ($szItems as $item) {
                         $all[] = $item;
                     }
                 }
-                // Failover to Subf2m.co only if Subzone returned < 2 results
-                if (count($szItems) < 2 && $subf2m !== null && $subf2m->isConfigured() && $title !== '' && $inBudget()) {
-                    foreach ($subf2m->searchSeries($title, $year, 12, $season) as $item) {
+                $szFaCount = count(array_filter($szItems, static fn(SubtitleItem $s): bool => $s->languageCode === 'fa'));
+                // Failover to Subf2m.co if Subzone returned < 3 total OR < 2 Persian subtitles
+                if ((count($szItems) < 3 || $szFaCount < 2) && $subf2m !== null && $subf2m->isConfigured() && $title !== '' && $inBudget()) {
+                    foreach ($subf2m->searchSeries($title, $year, 25, $season) as $item) {
                         $all[] = $item;
                     }
                 }
@@ -175,8 +176,9 @@ final class SubtitleAggregatorService
                         $all[] = $item;
                     }
                 }
-                // Failover to Subf2m.co only if Subzone returned < 2 results
-                if (count($szItems) < 2 && $subf2m !== null && $subf2m->isConfigured() && $inBudget()) {
+                $szFaCount = count(array_filter($szItems, static fn(SubtitleItem $s): bool => $s->languageCode === 'fa'));
+                // Failover to Subf2m.co if Subzone returned < 3 total OR < 2 Persian subtitles
+                if ((count($szItems) < 3 || $szFaCount < 2) && $subf2m !== null && $subf2m->isConfigured() && $inBudget()) {
                     foreach ($subf2m->searchByTitle($title, $year) as $item) {
                         $all[] = $item;
                     }
@@ -197,7 +199,9 @@ final class SubtitleAggregatorService
             }
 
             $ttl = min(604800, max(0, (int) $this->settings->get('site.cache_ttl', 21600)));
-            $this->cache->set($cacheKey, array_map(static fn(SubtitleItem $s) => $s->toArray(), $all), !empty($all) ? $ttl : 300);
+            if (!empty($all) && $ttl > 0) {
+                $this->cache->set($cacheKey, array_map(static fn(SubtitleItem $s) => $s->toArray(), $all), $ttl);
+            }
 
             return $all;
         } finally {

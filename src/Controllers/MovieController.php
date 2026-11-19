@@ -170,7 +170,10 @@ final class MovieController extends BaseController
             $this->http,
             $repository
         );
-        $allSubtitles = $aggregator->getSubtitlesForImdb($media->imdbId, $media->mediaType, $media->title, $media->year);
+        // Avoid double-scraping on direct /season-N pages: fetch requested season directly when specified
+        $allSubtitles = ($season !== null && $media->mediaType === 'tv')
+            ? $aggregator->getSubtitlesForImdb($media->imdbId, $media->mediaType, $media->title, $media->year, $season)
+            : $aggregator->getSubtitlesForImdb($media->imdbId, $media->mediaType, $media->title, $media->year);
 
         $availableSeasons = [];
         if ($media->mediaType === 'tv') {
@@ -193,6 +196,12 @@ final class MovieController extends BaseController
         if ($season !== null && $season > 0) {
             $availableSeasons[$season] = $season;
         }
+        if ($media->mediaType === 'tv' && $availableSeasons !== []) {
+            $highestSeason = max(array_keys($availableSeasons));
+            for ($fillS = 1; $fillS <= min($highestSeason, 50); $fillS++) {
+                $availableSeasons[$fillS] = $fillS;
+            }
+        }
         ksort($availableSeasons);
         $seasonNumbers = array_values($availableSeasons);
 
@@ -205,13 +214,6 @@ final class MovieController extends BaseController
         }
 
         $displayedSubtitles = $allSubtitles;
-        if ($season !== null && $media->mediaType === 'tv') {
-            // Fetch the requested season in full (all episodes + season packs)
-            $seasonSubs = $aggregator->getSubtitlesForImdb($media->imdbId, $media->mediaType, $media->title, $media->year, $season);
-            if ($seasonSubs !== []) {
-                $displayedSubtitles = $seasonSubs;
-            }
-        }
         if ($langInfo !== null) {
             $displayedSubtitles = array_values(array_filter(
                 $displayedSubtitles,
@@ -223,9 +225,43 @@ final class MovieController extends BaseController
                 $displayedSubtitles,
                 static fn($s) => $s->season === $season || $s->season === null
             ));
+            // Refresh season counts in case this season was just fetched on-demand
+            $seasonCounts = $repository->getSeasonCounts($media->imdbId);
         }
-        if (count($displayedSubtitles) > 250) {
-            $displayedSubtitles = array_slice($displayedSubtitles, 0, 250);
+        foreach ($displayedSubtitles as $subObj) {
+            if ($subObj->season !== null && $subObj->season <= 0) {
+                $subObj->season = null;
+            }
+            if ($subObj->episode !== null && $subObj->episode <= 0) {
+                $subObj->episode = null;
+            }
+        }
+        // Attach community sync votes & boost positively-voted subtitles to top within each language
+        $votesMap = $repository->getVotesMapForImdb($media->imdbId);
+        if ($votesMap !== []) {
+            foreach ($displayedSubtitles as $subObj) {
+                $vHash = hash('sha256', $media->imdbId . '|' . $subObj->downloadUrl);
+                if (isset($votesMap[$vHash])) {
+                    $subObj->upvotes   = $votesMap[$vHash]['up'];
+                    $subObj->downvotes = $votesMap[$vHash]['down'];
+                }
+            }
+            // Group by language to preserve exact language priority order (avoids non-transitive usort)
+            $byLang = [];
+            foreach ($displayedSubtitles as $subObj) {
+                $byLang[$subObj->languageCode][] = $subObj;
+            }
+            $sortedSubs = [];
+            foreach ($byLang as $langGroup) {
+                usort($langGroup, static fn($a, $b): int => ($b->upvotes - $b->downvotes) <=> ($a->upvotes - $a->downvotes));
+                foreach ($langGroup as $item) {
+                    $sortedSubs[] = $item;
+                }
+            }
+            $displayedSubtitles = $sortedSubs;
+        }
+        if (count($displayedSubtitles) > 500) {
+            $displayedSubtitles = array_slice($displayedSubtitles, 0, 500);
         }
 
         $similarMedia = $tmdb->getSimilar($media->tmdbId, $media->mediaType, 6);

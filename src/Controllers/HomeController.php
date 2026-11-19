@@ -112,7 +112,7 @@ final class HomeController extends BaseController
                         $tMeta = $this->cache->get("tmdb_imdb_v2_{$id}");
                         $posterUrl = (is_array($tMeta) && !empty($tMeta['posterUrl']))
                             ? (string) $tMeta['posterUrl']
-                            : 'https://images.metahub.space/poster/small/' . $id . '/img';
+                            : 'https://live.metahub.space/poster/medium/' . $id . '/img';
                     }
                     $topPicks[] = new MediaItem(
                         tmdbId: 0,

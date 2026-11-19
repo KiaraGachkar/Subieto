@@ -256,6 +256,7 @@ final class Installer
         }
     }
 
+
     private function runMigrations(PDO $pdo, string $prefix): void
     {
         $sqlStatements = [
@@ -287,7 +288,8 @@ final class Installer
                 INDEX `idx_imdb_title` (`imdb_id`, `media_title`(100)),
                 INDEX `idx_provider` (`provider`),
                 INDEX `idx_language` (`language_code`),
-                INDEX `idx_downloaded_at` (`downloaded_at`)
+                INDEX `idx_downloaded_at` (`downloaded_at`),
+                INDEX `idx_dl_lang_provider` (`language_code`, `provider`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
 
             "CREATE TABLE IF NOT EXISTS `{$prefix}rate_hits` (
@@ -323,7 +325,8 @@ final class Installer
                 `langs_json` VARCHAR(500) NOT NULL DEFAULT '',
                 `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (`imdb_id`),
-                INDEX `idx_updated` (`updated_at`)
+                INDEX `idx_updated` (`updated_at`),
+                INDEX `idx_type_year` (`media_type`, `year`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
 
             "CREATE TABLE IF NOT EXISTS `{$prefix}ad_clicks` (
