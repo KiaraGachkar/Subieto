@@ -221,10 +221,13 @@ final class MovieController extends BaseController
             ));
         }
         if ($season !== null) {
-            $displayedSubtitles = array_values(array_filter(
+            $exactSeasonSubs = array_values(array_filter(
                 $displayedSubtitles,
-                static fn($s) => $s->season === $season || $s->season === null
+                static fn($s) => $s->season === $season
             ));
+            $displayedSubtitles = $exactSeasonSubs !== []
+                ? $exactSeasonSubs
+                : array_values(array_filter($displayedSubtitles, static fn($s) => $s->season === null));
             // Refresh season counts in case this season was just fetched on-demand
             $seasonCounts = $repository->getSeasonCounts($media->imdbId);
         }
@@ -290,7 +293,7 @@ final class MovieController extends BaseController
             'jsonLd'           => $jsonLd,
             'media'            => $media,
             'subtitles'        => $displayedSubtitles,
-            'totalSubsCount'   => count($allSubtitles),
+            'totalSubsCount'   => $season !== null ? max(count($allSubtitles), array_sum($seasonCounts)) : count($allSubtitles),
             'activeSeason'     => $season,
             'activeLangInfo'   => $langInfo,
             'availableSeasons' => $seasonNumbers,

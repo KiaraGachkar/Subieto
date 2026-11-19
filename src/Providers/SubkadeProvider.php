@@ -63,7 +63,7 @@ final class SubkadeProvider implements SubtitleProviderInterface
             return [];
         }
 
-        $cacheKey = 'subkade_v1_' . md5(strtolower($cleanTitle) . '|' . trim($year) . '|' . $mediaType . '|' . ($season ?? 'all'));
+        $cacheKey = 'subkade_v2_' . md5(strtolower($cleanTitle) . '|' . trim($year) . '|' . $mediaType . '|' . ($season ?? 'all'));
         if ($this->cache !== null) {
             $cached = $this->cache->get($cacheKey);
             if (is_array($cached)) {
@@ -201,14 +201,11 @@ final class SubkadeProvider implements SubtitleProviderInterface
             $text = mb_strtolower(trim(preg_replace('/\s+/', ' ', (string) $a->textContent) ?: ''));
             $combined = $text . ' ' . strtolower($path);
 
-            $score = 0;
-            if ($needle !== '' && str_contains($text, $needle)) {
-                $score += 50;
-            }
-            if ($slugNeedle !== '' && str_contains(strtolower($path), $slugNeedle)) {
-                $score += 40;
-            }
-            if ($score === 0) {
+            $score = max(
+                ReleaseParser::titleMatchScore($text, $title, $year, $mediaType === 'tv'),
+                ReleaseParser::titleMatchScore(str_replace(['/', '-', '_'], ' ', $path), $title, $year, $mediaType === 'tv')
+            );
+            if ($score <= 0) {
                 continue;
             }
             if ($year !== '' && str_contains($combined, $year)) {

@@ -463,13 +463,12 @@ final class SubtitleRepository
                     $all[] = $item;
                 }
             }
-            // Primary mirror: Subzone.ir
-            $szSubs = $subzone->isConfigured() ? $subzone->searchSeries($media->title, $media->year, 15, null) : [];
-            foreach ($szSubs as $item) {
-                $all[] = $item;
+            if ($subzone->isConfigured()) {
+                foreach ($subzone->searchSeries($media->title, $media->year, 15, null) as $item) {
+                    $all[] = $item;
+                }
             }
-            // Failover: Subf2m.co if Subzone returned few/no results
-            if (count($szSubs) < 3 && $subf2m->isConfigured()) {
+            if ($subf2m->isConfigured()) {
                 foreach ($subf2m->searchSeries($media->title, $media->year, 15, null) as $item) {
                     $all[] = $item;
                 }
@@ -480,13 +479,12 @@ final class SubtitleRepository
                 }
             }
         } else {
-            // Primary mirror: Subzone.ir
-            $szSubs = $subzone->isConfigured() ? $subzone->searchByTitle($media->title, $media->year) : [];
-            foreach ($szSubs as $item) {
-                $all[] = $item;
+            if ($subzone->isConfigured()) {
+                foreach ($subzone->searchByTitle($media->title, $media->year) as $item) {
+                    $all[] = $item;
+                }
             }
-            // Failover: Subf2m.co if Subzone returned < 2 results
-            if (count($szSubs) < 2 && $subf2m->isConfigured()) {
+            if ($subf2m->isConfigured()) {
                 foreach ($subf2m->searchByTitle($media->title, $media->year) as $item) {
                     $all[] = $item;
                 }
@@ -498,6 +496,9 @@ final class SubtitleRepository
             }
         }
 
+        if ($all !== []) {
+            $this->clearForImdb($cleanImdb);
+        }
         $savedCount = $this->saveItems($cleanImdb, $all, true);
         $faCount = count(array_filter($all, static fn(SubtitleItem $s): bool => $s->languageCode === 'fa'));
 
@@ -579,6 +580,20 @@ final class SubtitleRepository
             ];
         } catch (Throwable) {
             return ['up' => 0, 'down' => 0];
+        }
+    }
+
+    public function clearForImdb(string $imdbId): void
+    {
+        $cleanImdb = strtolower(trim($imdbId));
+        if ($cleanImdb === '') {
+            return;
+        }
+        try {
+            $stmt = $this->pdo->prepare("DELETE FROM `{$this->prefix}subtitles` WHERE `imdb_id` = :imdb");
+            $stmt->execute([':imdb' => $cleanImdb]);
+        } catch (Throwable) {
+            // Ignore
         }
     }
 }

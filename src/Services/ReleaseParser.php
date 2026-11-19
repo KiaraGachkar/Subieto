@@ -127,4 +127,87 @@ final class ReleaseParser
         $clean = preg_replace('/[^a-z0-9]+/', ' ', $clean) ?? $clean;
         return trim(preg_replace('/\s+/', ' ', $clean) ?? '');
     }
+
+    /**
+     * Strips trailing season indicators (e.g., "First Season", "Season 2", "2nd Season", "S02")
+     * from a normalized title so series names like "From - First Season" compare cleanly to "From".
+     */
+    public static function stripSeasonSuffix(string $normalized): string
+    {
+        $wordPattern = implode('|', array_keys(self::SEASON_WORDS));
+        $clean = preg_replace('/(?:' . $wordPattern . ')\s+season.*$/', '', $normalized) ?? $normalized;
+        $clean = preg_replace('/\d{1,2}(?:st|nd|rd|th)\s+season.*$/', '', $clean) ?? $clean;
+        $clean = preg_replace('/season\s+\d{1,2}.*$/', '', $clean) ?? $clean;
+        $clean = preg_replace('/s0?\d{1,2}.*$/', '', $clean) ?? $clean;
+        return trim(preg_replace('/\s+/', ' ', $clean) ?? '');
+    }
+
+    /**
+     * Strict title relevance score (0 = reject). Prevents short titles like "From", "It", "Up", "Her"
+     * from matching unrelated titles such as "From Dusk Till Dawn" or "Tales from the Crypt".
+     */
+    public static function titleMatchScore(string $candidateText, string $targetTitle, string $year = '', bool $stripSeason = false): int
+    {
+        $normTarget = self::normalizeTitle($targetTitle);
+        if ($normTarget === '') {
+            return 0;
+        }
+
+        $normCand = self::normalizeTitle($candidateText);
+        if ($stripSeason) {
+            $normCand = self::stripSeasonSuffix($normCand);
+        }
+        if ($normCand === '') {
+            return 0;
+        }
+
+        // Exact normalized match (handles "From", "It", "Dune", "Game of Thrones", etc.)
+        if ($normCand === $normTarget) {
+            $score = 200;
+            if ($year !== '' && str_contains($candidateText, $year)) {
+                $score += 60;
+            }
+            return $score;
+        }
+
+        // For short titles (< 6 chars or single short word), require exact base match only
+        $targetWords = array_values(array_filter(explode(' ', $normTarget), static fn(string $w): bool => $w !== ''));
+        if (strlen($normTarget) < 6 || (count($targetWords) === 1 && strlen($targetWords[0]) <= 5)) {
+            return 0;
+        }
+
+        // For longer titles, allow prefix match on word boundary (e.g. "Game of Thrones" vs "Game of Thrones 2011")
+        if (str_starts_with($normCand, $normTarget . ' ')) {
+            $extra = trim(substr($normCand, strlen($normTarget)));
+            // Reject spin-offs / specials like "story so far", "part two", "aftermath" unless target asks for them
+            $rejectExtras = ['story so far', 'aftermath', 'watchathon', 'making of', 'behind the scenes', 'part two', 'part 2', 'part ii'];
+            foreach ($rejectExtras as $bad) {
+                if (str_contains($extra, $bad) && !str_contains($normTarget, $bad)) {
+                    return 0;
+                }
+            }
+            $score = 120;
+            if ($year !== '' && str_contains($candidateText, $year)) {
+                $score += 60;
+            }
+            return $score;
+        }
+
+        return 0;
+    }
+
+    /**
+     * Produces a canonical deduplication key for a release name so identical releases
+     * across different providers collapse into a single best entry.
+     */
+    public static function normalizeReleaseKey(string $releaseName): string
+    {
+        $s = strtolower(trim($releaseName));
+        // Strip trailing subtitle/archive extensions
+        $s = preg_replace('/\.(?:srt|zip|rar|ass|ssa|vtt|sub)$/i', '', $s) ?? $s;
+        // Strip common site/provider tags
+        $s = preg_replace('/(?:subf2m|subzone|subkade|subdl|yifysubtitles|opensubtitles|podnapisi|subieto)/i', '', $s) ?? $s;
+        // Keep only alphanumeric characters
+        return preg_replace('/[^a-z0-9]+/', '', $s) ?? '';
+    }
 }

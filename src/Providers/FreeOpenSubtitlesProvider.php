@@ -206,7 +206,11 @@ final class FreeOpenSubtitlesProvider implements SubtitleProviderInterface
             $episodeIds = $picked;
         }
         if ($episodeIds === []) {
-            return [];
+            // Fallback: probe Season 1 episodes 1..10 if Cinemeta metadata had no episode list
+            $fallbackS = ($season !== null && $season > 0) ? $season : 1;
+            for ($ep = 1; $ep <= 10; $ep++) {
+                $episodeIds[] = "{$cleanImdb}:{$fallbackS}:{$ep}";
+            }
         }
 
         // Single parallel curl_multi batch for all episodes instead of sequential chunks

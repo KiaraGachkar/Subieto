@@ -66,7 +66,7 @@ final class SubtitleAggregatorService
         }
         $configHash = substr(md5(implode('|', $configParts)), 0, 8);
         $seasonPart = $season !== null ? "_s{$season}" : '';
-        $cacheKey = "subs_v12_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}{$seasonPart}";
+        $cacheKey = "subs_v13_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}{$seasonPart}";
 
         if (!$forceRefresh) {
             $cached = $this->cache->get($cacheKey);
@@ -122,7 +122,7 @@ final class SubtitleAggregatorService
 
             // Shared time budget so slow scrapers never exceed PHP/LiteSpeed limits
             @set_time_limit(60);
-            $scrapeDeadline = microtime(true) + 10.0;
+            $scrapeDeadline = microtime(true) + 15.0;
             $inBudget = static fn(): bool => microtime(true) < $scrapeDeadline;
 
             $subzone = null;
@@ -142,23 +142,19 @@ final class SubtitleAggregatorService
             }
 
             if ($mediaType === 'tv') {
+                // Query ALL enabled TV providers (duplicates are merged & overridden below)
                 if ($freeOs !== null && $freeOs->isConfigured()) {
                     foreach ($freeOs->searchSeries($imdbId, $season !== null ? 40 : 20, $season) as $item) {
                         $all[] = $item;
                     }
                 }
-                // Primary mirror: Subzone.ir
-                $szItems = [];
                 if ($subzone !== null && $subzone->isConfigured() && $title !== '' && $inBudget()) {
-                    $szItems = $subzone->searchSeries($title, $year, $season !== null ? 10 : 5, $season);
-                    foreach ($szItems as $item) {
+                    foreach ($subzone->searchSeries($title, $year, $season !== null ? 10 : 6, $season) as $item) {
                         $all[] = $item;
                     }
                 }
-                $szFaCount = count(array_filter($szItems, static fn(SubtitleItem $s): bool => $s->languageCode === 'fa'));
-                // Failover to Subf2m.co if Subzone returned < 3 total OR < 2 Persian subtitles
-                if ((count($szItems) < 3 || $szFaCount < 2) && $subf2m !== null && $subf2m->isConfigured() && $title !== '' && $inBudget()) {
-                    foreach ($subf2m->searchSeries($title, $year, $season !== null ? 10 : 5, $season) as $item) {
+                if ($subf2m !== null && $subf2m->isConfigured() && $title !== '' && $inBudget()) {
+                    foreach ($subf2m->searchSeries($title, $year, $season !== null ? 10 : 6, $season) as $item) {
                         $all[] = $item;
                     }
                 }
@@ -168,23 +164,18 @@ final class SubtitleAggregatorService
                     }
                 }
             } elseif ($title !== '') {
-                // Primary mirror: Subzone.ir (always run on first fetch to populate complete multi-language + FA archive)
-                $szItems = [];
+                // Query ALL enabled movie providers (duplicates are merged & overridden below)
                 if ($subzone !== null && $subzone->isConfigured() && $inBudget()) {
-                    $szItems = $subzone->searchByTitle($title, $year);
-                    foreach ($szItems as $item) {
+                    foreach ($subzone->searchByTitle($title, $year) as $item) {
                         $all[] = $item;
                     }
                 }
-                $szFaCount = count(array_filter($szItems, static fn(SubtitleItem $s): bool => $s->languageCode === 'fa'));
-                // Failover to Subf2m.co if Subzone returned < 3 total OR < 2 Persian subtitles
-                if ((count($szItems) < 3 || $szFaCount < 2) && $subf2m !== null && $subf2m->isConfigured() && $inBudget()) {
+                if ($subf2m !== null && $subf2m->isConfigured() && $inBudget()) {
                     foreach ($subf2m->searchByTitle($title, $year) as $item) {
                         $all[] = $item;
                     }
                 }
-                $faCount = count(array_filter($all, static fn(SubtitleItem $s): bool => $s->languageCode === 'fa'));
-                if ($faCount < 3 && $subkade !== null && $subkade->isConfigured() && $inBudget()) {
+                if ($subkade !== null && $subkade->isConfigured() && $inBudget()) {
                     foreach ($subkade->searchByTitle($title, $year, 'movie', null) as $item) {
                         $all[] = $item;
                     }
@@ -215,19 +206,47 @@ final class SubtitleAggregatorService
      */
     private function dedupeAndSort(array $items, string $priorityRaw): array
     {
-        $deduped = [];
-        $seenKeys = [];
+        // Provider reliability ranking: higher score overrides lower score when release names match
+        $providerRank = [
+            'SubDL'         => 70,
+            'OpenSubtitles' => 60,
+            'Subzone'       => 50,
+            'Subf2m'        => 45,
+            'Subkade'       => 40,
+            'Podnapisi'     => 35,
+            'YIFY'          => 30,
+        ];
+        $itemScore = static function (SubtitleItem $s) use ($providerRank): int {
+            $score = $providerRank[$s->provider] ?? 20;
+            if ($s->qualityTag !== '' && $s->qualityTag !== 'All') {
+                $score += 5;
+            }
+            if ($s->translator !== '' && !in_array($s->translator, ['OpenSubtitles Archive', 'OpenSubtitles', 'Podnapisi', 'YIFY', 'Subf2m', 'Subzone', 'Subkade', 'نامشخص'], true)) {
+                $score += 5;
+            }
+            if ($s->season !== null && $s->season > 0) {
+                $score += 3;
+            }
+            if ($s->episode !== null && $s->episode > 0) {
+                $score += 3;
+            }
+            return $score;
+        };
+
+        $byKey = [];
+        $unkeyed = [];
         foreach ($items as $item) {
-            $normRel = preg_replace('/[^a-z0-9]+/', '', strtolower($item->releaseName));
-            $dKey = $item->languageCode . '|' . $normRel . '|' . ($item->season ?? 0) . '|' . ($item->episode ?? 0);
-            if ($normRel !== '' && isset($seenKeys[$dKey])) {
+            $normRel = ReleaseParser::normalizeReleaseKey($item->releaseName);
+            if ($normRel === '') {
+                $unkeyed[] = $item;
                 continue;
             }
-            if ($normRel !== '') {
-                $seenKeys[$dKey] = true;
+            $dKey = $item->languageCode . '|' . $normRel . '|' . ($item->season ?? 0) . '|' . ($item->episode ?? 0);
+            if (!isset($byKey[$dKey]) || $itemScore($item) > $itemScore($byKey[$dKey])) {
+                $byKey[$dKey] = $item;
             }
-            $deduped[] = $item;
         }
+        $deduped = array_merge(array_values($byKey), $unkeyed);
 
         $priorityList = array_values(array_filter(array_map('trim', explode(',', $priorityRaw)), static fn(string $v): bool => $v !== ''));
         $priorityMap  = array_flip($priorityList);

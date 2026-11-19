@@ -64,7 +64,7 @@ class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        $cacheKey = $this->id . '_title_v4_' . md5(strtolower($cleanTitle) . '|' . trim($year));
+        $cacheKey = $this->id . '_title_v5_' . md5(strtolower($cleanTitle) . '|' . trim($year));
         if ($this->cache !== null) {
             $cached = $this->cache->get($cacheKey);
             if (is_array($cached) && $cached !== []) {
@@ -100,7 +100,7 @@ class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        $cacheKey = $this->id . '_series_v5_' . md5(strtolower($cleanTitle) . '|' . trim($year) . '|' . ($season ?? 'all'));
+        $cacheKey = $this->id . '_series_v6_' . md5(strtolower($cleanTitle) . '|' . trim($year) . '|' . ($season ?? 'all'));
         if ($this->cache !== null) {
             $cached = $this->cache->get($cacheKey);
             if (is_array($cached) && $cached !== []) {
@@ -248,9 +248,6 @@ class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        $normTitle = ReleaseParser::normalizeTitle($title);
-        $titleWords = array_values(array_filter(explode(' ', $normTitle), static fn(string $w): bool => strlen($w) >= 2));
-
         $matchedSeasonPaths = [];
         $seriesHubPaths = [];
 
@@ -262,23 +259,13 @@ class Subf2mProvider implements SubtitleProviderInterface
             }
 
             $slug = strtolower($hm[1]);
-            $normText = ReleaseParser::normalizeTitle($text);
+            $slugAsText = str_replace('-', ' ', $slug);
 
-            $matchesTitle = ($normTitle !== '' && str_contains($normText, $normTitle));
-            if (!$matchesTitle && count($titleWords) >= 2) {
-                $hits = 0;
-                foreach ($titleWords as $w) {
-                    if (str_contains($normText, $w)) {
-                        $hits++;
-                    }
-                }
-                $matchesTitle = ($hits === count($titleWords));
-            }
-            if (!$matchesTitle) {
-                continue;
-            }
-
-            if (!str_contains($normTitle, 'story so far') && str_contains($normText, 'story so far')) {
+            $score = max(
+                ReleaseParser::titleMatchScore($text, $title, '', true),
+                ReleaseParser::titleMatchScore($slugAsText, $title, '', true)
+            );
+            if ($score <= 0) {
                 continue;
             }
 
@@ -288,13 +275,14 @@ class Subf2mProvider implements SubtitleProviderInterface
                     $matchedSeasonPaths[$href] = $detectedSeason;
                 }
             } else {
-                $seriesHubPaths[$href] = true;
+                $seriesHubPaths[$href] = $score;
             }
         }
 
         $targetPaths = $matchedSeasonPaths;
         if ($targetPaths === [] || $season === null) {
-            foreach ($seriesHubPaths as $hPath => $_) {
+            arsort($seriesHubPaths);
+            foreach (array_slice(array_keys($seriesHubPaths), 0, 2) as $hPath) {
                 if (!isset($targetPaths[$hPath])) {
                     $targetPaths[$hPath] = null;
                 }
@@ -302,7 +290,7 @@ class Subf2mProvider implements SubtitleProviderInterface
         }
 
         uasort($targetPaths, static fn(?int $a, ?int $b): int => ($a ?? 999) <=> ($b ?? 999));
-        return array_slice($targetPaths, 0, max($maxPages, 25), true);
+        return array_slice($targetPaths, 0, max($maxPages, 15), true);
     }
 
     private function extractBestMoviePath(string $html, string $title, string $year): ?string
@@ -313,26 +301,60 @@ class Subf2mProvider implements SubtitleProviderInterface
             return null;
         }
 
-        $firstHref = null;
-        $needle = mb_strtolower(trim($title));
+        $bestHref  = null;
+        $bestScore = 0;
+
         foreach ($links as $a) {
             $href = trim((string) $a->getAttribute('href'));
             if ($href === '' || str_contains($href, 'searchbytitle') || preg_match('#^/subtitles/[^/]+/[^/]+/\d+#', $href)) {
                 continue;
             }
-            if (!preg_match('#^/subtitles/[a-z0-9-]+$#i', $href)) {
+            if (!preg_match('#^/subtitles/([a-z0-9-]+)$#i', $href, $hm)) {
                 continue;
             }
-            $text = trim((string) $a->textContent);
-            if ($firstHref === null && ($needle === '' || str_contains(mb_strtolower($text), $needle))) {
-                $firstHref = $href;
+
+            $slug = strtolower($hm[1]);
+            // Skip TV season pages when looking for a movie
+            if (ReleaseParser::seasonFromSlug($slug) !== null) {
+                continue;
             }
-            if ($year !== '' && str_contains($text, $year)) {
-                return $href;
+
+            $text = trim(preg_replace('/\s+/', ' ', (string) $a->textContent) ?: '');
+            if (ReleaseParser::seasonFromText($text) !== null) {
+                continue;
+            }
+
+            // Also inspect parent/sibling text for release year (Subf2m often puts year in a sibling span)
+            $contextText = $text;
+            if ($a->parentNode !== null) {
+                $pText = trim(preg_replace('/\s+/', ' ', (string) $a->parentNode->textContent) ?: '');
+                if ($pText !== '' && mb_strlen($pText) <= 180) {
+                    $contextText = $pText;
+                }
+            }
+
+            $score = max(
+                ReleaseParser::titleMatchScore($text, $title, $year, false),
+                ReleaseParser::titleMatchScore(str_replace('-', ' ', $slug), $title, $year, false)
+            );
+            if ($score <= 0) {
+                continue;
+            }
+            if ($year !== '' && str_contains($contextText, $year) && !str_contains($text, $year)) {
+                $score += 60;
+            }
+            // Penalize wrong year explicitly present in the candidate text
+            if ($year !== '' && preg_match('/\b((?:19|20)\d{2})\b/', $contextText, $ym) && $ym[1] !== $year) {
+                $score -= 100;
+            }
+
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestHref  = $href;
             }
         }
 
-        return $firstHref;
+        return $bestScore >= 100 ? $bestHref : null;
     }
 
     /**

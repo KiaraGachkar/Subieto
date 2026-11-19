@@ -543,7 +543,7 @@ $hueColor = static function (string $code): string {
                 const rowSearch = el.dataset.search || '';
                 const langOk   = this.lang === 'all' || this.lang === rowLang;
                 const qualOk   = this.qualityFilter === 'all' || this.qualityFilter === rowQual;
-                const seasonOk = this.seasonFilter === 'all' || rowSeason === '' || this.seasonFilter === rowSeason;
+                const seasonOk = this.seasonFilter === 'all' || this.seasonFilter === rowSeason;
                 const epOk     = this.episodeFilter === 'all' || this.episodeFilter === rowEp;
                 const textOk   = rowSearch.includes(this.releaseFilter.toLowerCase().trim());
                 return langOk && qualOk && seasonOk && epOk && textOk;

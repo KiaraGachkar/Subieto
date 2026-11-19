@@ -77,18 +77,6 @@ use App\Services\MetricsService;
 use App\Services\SeoHelper;
 
 $installer = new Installer($basePath);
-// Desktop convenience: strictly limited to localhost so production hosts never auto-reset admin password
-$isLocalPeer = in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true);
-if ($isLocalPeer && !$installer->isInstalled() && is_file($basePath . '/config/database.php')) {
-    try {
-        $tmpCfg = require $basePath . '/config/database.php';
-        $tmpPdo = Database::connect($tmpCfg);
-        $tmpPfx = (string) ($tmpCfg['prefix'] ?? 'sh_');
-        $installer->bootstrapExistingDatabase($tmpPdo, $tmpPfx);
-    } catch (Throwable $bootErr) {
-        error_log('[desktop-boot] ' . $bootErr->getMessage());
-    }
-}
 $requestMethod = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $requestUri = $_SERVER['REQUEST_URI'] ?? '/';
 $rawPath = parse_url($requestUri, PHP_URL_PATH) ?: '/';
