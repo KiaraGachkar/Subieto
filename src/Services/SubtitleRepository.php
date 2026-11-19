@@ -499,7 +499,7 @@ final class SubtitleRepository
         if ($all !== []) {
             $this->clearForImdb($cleanImdb);
         }
-        $savedCount = $this->saveItems($cleanImdb, $all, true);
+        $savedCount = $this->saveItems($cleanImdb, $all, $all !== []);
         $faCount = count(array_filter($all, static fn(SubtitleItem $s): bool => $s->languageCode === 'fa'));
 
         $langCodes = array_values(array_unique(array_map(static fn(SubtitleItem $s): string => $s->languageCode, $all)));

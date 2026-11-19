@@ -135,10 +135,10 @@ final class ReleaseParser
     public static function stripSeasonSuffix(string $normalized): string
     {
         $wordPattern = implode('|', array_keys(self::SEASON_WORDS));
-        $clean = preg_replace('/(?:' . $wordPattern . ')\s+season.*$/', '', $normalized) ?? $normalized;
-        $clean = preg_replace('/\d{1,2}(?:st|nd|rd|th)\s+season.*$/', '', $clean) ?? $clean;
-        $clean = preg_replace('/season\s+\d{1,2}.*$/', '', $clean) ?? $clean;
-        $clean = preg_replace('/s0?\d{1,2}.*$/', '', $clean) ?? $clean;
+        $clean = preg_replace('/\b(?:' . $wordPattern . ')\s+season\b.*$/', '', $normalized) ?? $normalized;
+        $clean = preg_replace('/\b\d{1,2}(?:st|nd|rd|th)\s+season\b.*$/', '', $clean) ?? $clean;
+        $clean = preg_replace('/\bseason\s+\d{1,2}\b.*$/', '', $clean) ?? $clean;
+        $clean = preg_replace('/\bs0?\d{1,2}\b.*$/', '', $clean) ?? $clean;
         return trim(preg_replace('/\s+/', ' ', $clean) ?? '');
     }
 
@@ -206,7 +206,7 @@ final class ReleaseParser
         // Strip trailing subtitle/archive extensions
         $s = preg_replace('/\.(?:srt|zip|rar|ass|ssa|vtt|sub)$/i', '', $s) ?? $s;
         // Strip common site/provider tags
-        $s = preg_replace('/(?:subf2m|subzone|subkade|subdl|yifysubtitles|opensubtitles|podnapisi|subieto)/i', '', $s) ?? $s;
+        $s = preg_replace('/\b(?:subf2m|subzone|subkade|subdl|yifysubtitles|opensubtitles|podnapisi|subieto)\b/i', '', $s) ?? $s;
         // Keep only alphanumeric characters
         return preg_replace('/[^a-z0-9]+/', '', $s) ?? '';
     }
