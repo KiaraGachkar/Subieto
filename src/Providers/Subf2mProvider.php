@@ -82,7 +82,7 @@ class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        $items = $this->fetchPagesAndCollect([$moviePath => null], 10);
+        $items = $this->fetchPagesAndCollect([$moviePath => null], 6);
         if ($this->cache !== null && $items !== []) {
             $this->cache->set($cacheKey, array_map(static fn(SubtitleItem $s) => $s->toArray(), $items), 86400);
         }
@@ -118,7 +118,7 @@ class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        $items = $this->fetchPagesAndCollect($targetPaths, 15, $season);
+        $items = $this->fetchPagesAndCollect($targetPaths, 6, $season);
         if ($this->cache !== null && $items !== []) {
             $this->cache->set($cacheKey, array_map(static fn(SubtitleItem $s) => $s->toArray(), $items), 86400);
         }
@@ -148,7 +148,7 @@ class Subf2mProvider implements SubtitleProviderInterface
     private function fetchSearchHtml(string $query): string
     {
         $url = $this->baseUrl . '/subtitles/searchbytitle?query=' . urlencode($query) . '&l=';
-        $res = $this->http->request('GET', $url, $this->browserHeaders(), null, 15);
+        $res = $this->http->request('GET', $url, $this->browserHeaders(), null, 5);
         return ($res['status'] >= 200 && $res['status'] < 300) ? $res['body'] : '';
     }
 

@@ -77,7 +77,7 @@ select.sel{height:40px;padding-inline:13px 30px;border:1px solid var(--firm);bor
 .chip{font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;padding:2.5px 7px;border-radius:7px;background:var(--raise);border:1px solid var(--line);white-space:nowrap}
 
 /* Poster Frame (Real TMDB Image + Generative Editorial Fallback) */
-.pv{position:relative;width:100%;aspect-ratio:2/3;border-radius:var(--r-card);overflow:hidden;background:hsl(var(--h,200) 34% 16%);isolation:isolate;box-shadow:var(--sh1);transition:box-shadow .28s ease,transform .28s ease}
+.pv{display:block;position:relative;width:100%;aspect-ratio:2/3;border-radius:var(--r-card);overflow:hidden;background:hsl(var(--h,200) 34% 16%);isolation:isolate;box-shadow:var(--sh1);transition:box-shadow .28s ease,transform .28s ease}
 .pv__bg{position:absolute;inset:0;background:linear-gradient(158deg,hsl(var(--h,200) 40% 26%) 0%,hsl(calc(var(--h,200) + 42) 44% 15%) 52%,hsl(calc(var(--h,200) + 70) 38% 8%) 100%)}
 .pv img{position:relative;z-index:2;width:100%;height:100%;object-fit:cover;display:block;transition:transform .45s cubic-bezier(.2,.8,.3,1)}
 .pv__fb{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;justify-content:space-between;padding:14px}

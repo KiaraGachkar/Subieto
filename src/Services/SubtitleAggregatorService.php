@@ -111,7 +111,7 @@ final class SubtitleAggregatorService
                 }
             }
 
-            $responses = $this->http->getJsonBatch($batchRequests, 9);
+            $responses = $this->http->getJsonBatch($batchRequests, 5);
 
             $all = [];
             foreach ($activeProviders as $idx => $provider) {
@@ -122,7 +122,7 @@ final class SubtitleAggregatorService
 
             // Shared time budget so slow scrapers never exceed PHP/LiteSpeed limits
             @set_time_limit(60);
-            $scrapeDeadline = microtime(true) + 35.0;
+            $scrapeDeadline = microtime(true) + 10.0;
             $inBudget = static fn(): bool => microtime(true) < $scrapeDeadline;
 
             $subzone = null;
@@ -143,14 +143,14 @@ final class SubtitleAggregatorService
 
             if ($mediaType === 'tv') {
                 if ($freeOs !== null && $freeOs->isConfigured()) {
-                    foreach ($freeOs->searchSeries($imdbId, 180, $season) as $item) {
+                    foreach ($freeOs->searchSeries($imdbId, $season !== null ? 40 : 20, $season) as $item) {
                         $all[] = $item;
                     }
                 }
                 // Primary mirror: Subzone.ir
                 $szItems = [];
                 if ($subzone !== null && $subzone->isConfigured() && $title !== '' && $inBudget()) {
-                    $szItems = $subzone->searchSeries($title, $year, 25, $season);
+                    $szItems = $subzone->searchSeries($title, $year, $season !== null ? 10 : 5, $season);
                     foreach ($szItems as $item) {
                         $all[] = $item;
                     }
@@ -158,7 +158,7 @@ final class SubtitleAggregatorService
                 $szFaCount = count(array_filter($szItems, static fn(SubtitleItem $s): bool => $s->languageCode === 'fa'));
                 // Failover to Subf2m.co if Subzone returned < 3 total OR < 2 Persian subtitles
                 if ((count($szItems) < 3 || $szFaCount < 2) && $subf2m !== null && $subf2m->isConfigured() && $title !== '' && $inBudget()) {
-                    foreach ($subf2m->searchSeries($title, $year, 25, $season) as $item) {
+                    foreach ($subf2m->searchSeries($title, $year, $season !== null ? 10 : 5, $season) as $item) {
                         $all[] = $item;
                     }
                 }

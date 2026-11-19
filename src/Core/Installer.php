@@ -257,6 +257,35 @@ final class Installer
     }
 
 
+    public function bootstrapExistingDatabase(PDO $pdo, string $prefix = 'sh_'): void
+    {
+        $this->runMigrations($pdo, $prefix);
+        $this->seedSettings($pdo, $prefix, [
+            'site.title'                     => 'Subieto',
+            'site.base_url'                  => \App\Services\SeoHelper::getBaseUrl(),
+            'site.description'               => 'Fast direct movie and TV series subtitle downloads in clean UTF-8 SRT format.',
+            'site.download_mode'             => 'stream',
+            'site.default_theme'             => 'light',
+            'site.cache_ttl'                 => '21600',
+            'app.secret_key'                 => bin2hex(random_bytes(32)),
+            'security.bind_ip_download'      => '0',
+            'security.trusted_proxies'       => '',
+            'providers.free_opensub_enabled' => '1',
+            'providers.podnapisi_enabled'    => '1',
+            'providers.yify_enabled'         => '1',
+            'providers.subf2m_enabled'       => '1',
+            'providers.subzone_enabled'      => '1',
+            'providers.subkade_enabled'      => '1',
+            'providers.priority_languages'   => 'fa,en,ar,es,fr,tr',
+            'ads.enabled'                    => '0',
+            'admin.password_hash'            => PasswordHasher::hash('admin12345'),
+        ]);
+        @mkdir($this->basePath . '/storage/cache', 0755, true);
+        @mkdir($this->basePath . '/storage/pages', 0755, true);
+        @mkdir($this->basePath . '/storage/logs', 0755, true);
+        @file_put_contents($this->basePath . '/storage/installed.lock', 'Bootstrapped at ' . date('Y-m-d H:i:s'), LOCK_EX);
+    }
+
     private function runMigrations(PDO $pdo, string $prefix): void
     {
         $sqlStatements = [
