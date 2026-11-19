@@ -596,4 +596,19 @@ final class SubtitleRepository
             // Ignore
         }
     }
+
+    public function isSyncComplete(string $imdbId): bool
+    {
+        $cleanImdb = strtolower(trim($imdbId));
+        if ($cleanImdb === '') {
+            return false;
+        }
+        try {
+            $stmt = $this->pdo->prepare("SELECT `is_complete` FROM `{$this->prefix}media_sync` WHERE `imdb_id` = :imdb LIMIT 1");
+            $stmt->execute([':imdb' => $cleanImdb]);
+            return ((int) $stmt->fetchColumn()) === 1;
+        } catch (Throwable) {
+            return false;
+        }
+    }
 }

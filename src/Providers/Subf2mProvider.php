@@ -100,7 +100,7 @@ class Subf2mProvider implements SubtitleProviderInterface
             return [];
         }
 
-        $cacheKey = $this->id . '_series_v6_' . md5(strtolower($cleanTitle) . '|' . trim($year) . '|' . ($season ?? 'all'));
+        $cacheKey = $this->id . '_series_v7_' . md5(strtolower($cleanTitle) . '|' . trim($year) . '|' . ($season ?? 'all'));
         if ($this->cache !== null) {
             $cached = $this->cache->get($cacheKey);
             if (is_array($cached) && $cached !== []) {
@@ -280,11 +280,15 @@ class Subf2mProvider implements SubtitleProviderInterface
         }
 
         $targetPaths = $matchedSeasonPaths;
-        if ($targetPaths === [] || $season === null) {
+        if ($targetPaths === [] || $season === null || $season === 1) {
             arsort($seriesHubPaths);
+            $hasExplicitSeason1 = in_array(1, $matchedSeasonPaths, true);
             foreach (array_slice(array_keys($seriesHubPaths), 0, 2) as $hPath) {
                 if (!isset($targetPaths[$hPath])) {
-                    $targetPaths[$hPath] = null;
+                    // Subf2m/Subzone often host Season 1 at the base slug (e.g. /subtitles/mobland)
+                    // with no "first-season" suffix. Tag it as Season 1 when Season 1 is requested
+                    // or when no explicit Season 1 slug exists.
+                    $targetPaths[$hPath] = ($season === 1 || !$hasExplicitSeason1) ? 1 : null;
                 }
             }
         }

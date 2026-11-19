@@ -48,10 +48,27 @@ final class SubtitleAggregatorService
         $priorityRaw = strtolower(trim((string) $this->settings->get('providers.priority_languages', 'en,fa,ar,es,fr,tr')));
 
         // 1. Check Permanent MySQL Archive first (survives cache purges & setting changes)
+        // For TV series overview ($season === null), don't lock onto a partial archive (e.g. only Season 2 cached)
+        // unless the title is marked complete or Season 1 is already present.
         if (!$forceRefresh && $this->repository !== null) {
             $archived = $this->repository->getByImdbId($imdbId, $season);
             if ($archived !== []) {
-                return $this->dedupeAndSort($archived, $priorityRaw);
+                $dbReady = true;
+                if ($mediaType === 'tv' && $season === null && !$this->repository->isSyncComplete($imdbId)) {
+                    $hasSeason1 = false;
+                    foreach ($archived as $archItem) {
+                        if ($archItem->season === 1) {
+                            $hasSeason1 = true;
+                            break;
+                        }
+                    }
+                    if (!$hasSeason1) {
+                        $dbReady = false;
+                    }
+                }
+                if ($dbReady) {
+                    return $this->dedupeAndSort($archived, $priorityRaw);
+                }
             }
         }
 
@@ -66,7 +83,7 @@ final class SubtitleAggregatorService
         }
         $configHash = substr(md5(implode('|', $configParts)), 0, 8);
         $seasonPart = $season !== null ? "_s{$season}" : '';
-        $cacheKey = "subs_v13_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}{$seasonPart}";
+        $cacheKey = "subs_v14_{$imdbId}_{$mediaType}_{$priorityHash}_{$configHash}{$seasonPart}";
 
         if (!$forceRefresh) {
             $cached = $this->cache->get($cacheKey);
@@ -179,6 +196,13 @@ final class SubtitleAggregatorService
                     foreach ($subkade->searchByTitle($title, $year, 'movie', null) as $item) {
                         $all[] = $item;
                     }
+                }
+            }
+
+            if ($this->repository !== null) {
+                $existing = $this->repository->getByImdbId($imdbId, $season);
+                foreach ($existing as $exItem) {
+                    $all[] = $exItem;
                 }
             }
 
