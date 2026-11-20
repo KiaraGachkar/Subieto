@@ -33,9 +33,10 @@ final class HomeController extends BaseController
         $latestSubtitles = [];
         try {
             $stmt = $this->db->query(
-                "SELECT `imdb_id`, `slug`, `title`, `media_type`, `year`, `langs_json`
-                 FROM `{$this->prefix}indexed_media`
-                 ORDER BY `updated_at` DESC LIMIT 12"
+                "SELECT m.`imdb_id`, m.`slug`, m.`title`, m.`media_type`, m.`year`, m.`langs_json`
+                 FROM `{$this->prefix}indexed_media` m
+                 INNER JOIN `{$this->prefix}media_sync` s ON s.`imdb_id` = m.`imdb_id` AND s.`sub_count` > 0
+                 ORDER BY s.`last_synced_at` DESC LIMIT 12"
             );
             $latestSubtitles = $stmt !== false ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
         } catch (Throwable) {

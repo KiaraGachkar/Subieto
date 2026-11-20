@@ -117,7 +117,7 @@ final class TelegramController extends BaseController
             $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $query) . '%';
             $stmt = $this->db->prepare(
                 "SELECT m.`imdb_id`, m.`slug`, m.`title`, m.`year`, m.`media_type`,
-                        (SELECT COUNT(*) FROM `{$this->prefix}subtitles` s WHERE s.`imdb_id` = m.`imdb_id` AND s.`is_active` = 1) AS `sub_count`
+                        (SELECT COUNT(*) FROM `{$this->prefix}subtitles` s WHERE s.`imdb_id` = m.`imdb_id` AND s.`is_active` = 1 AND s.`download_url` LIKE 'localzip://%') AS `sub_count`
                  FROM `{$this->prefix}indexed_media` m
                  WHERE m.`title` LIKE :q1 OR m.`persian_title` LIKE :q2 OR m.`imdb_id` = :exact
                  ORDER BY `sub_count` DESC, m.`updated_at` DESC

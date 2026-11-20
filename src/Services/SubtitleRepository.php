@@ -362,6 +362,85 @@ final class SubtitleRepository
         }
     }
 
+
+    /**
+     * Returns all IMDb IDs that currently have active `localzip://` rows in MySQL
+     * AND a valid `.zip` file on disk in `storage/subtitles/{imdb_id}.zip`.
+     *
+     * @return string[]
+     */
+    public function getVerifiedPresentImdbIds(): array
+    {
+        try {
+            $stmt = $this->pdo->query(
+                "SELECT DISTINCT `imdb_id`
+                 FROM `{$this->prefix}subtitles`
+                 WHERE `is_active` = 1 AND `download_url` LIKE 'localzip://%'"
+            );
+            $dbIds = $stmt !== false ? ($stmt->fetchAll(PDO::FETCH_COLUMN) ?: []) : [];
+        } catch (Throwable) {
+            return [];
+        }
+
+        $subDir = $this->storageDir !== '' ? rtrim($this->storageDir, '/') . '/subtitles' : '';
+        $verified = [];
+        foreach ($dbIds as $rawId) {
+            $cid = strtolower(trim((string) $rawId));
+            if ($cid === '') {
+                continue;
+            }
+            if ($subDir !== '' && !is_file($subDir . '/' . $cid . '.zip')) {
+                continue;
+            }
+            $verified[] = $cid;
+        }
+        return $verified;
+    }
+
+    /**
+     * Returns titles already registered in `sh_indexed_media` (homepage trending, visited pages,
+     * bulk-seeded catalog) that do NOT yet have any verified local subtitles.
+     *
+     * @param string[] $presentIds
+     * @return array<int, array{imdb_id: string, title: string, media_type: string, year: string, poster_url: string, slug: string}>
+     */
+    public function getMissingIndexedMedia(array $presentIds, int $limit = 200): array
+    {
+        $limit = max(1, min(500, $limit));
+        $presentMap = array_flip($presentIds);
+        try {
+            $stmt = $this->pdo->query(
+                "SELECT `imdb_id`, `slug`, `title`, `media_type`, `year`, `poster_url`
+                 FROM `{$this->prefix}indexed_media`
+                 ORDER BY `updated_at` DESC
+                 LIMIT " . ($limit + count($presentIds) + 50)
+            );
+            $rows = $stmt !== false ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        } catch (Throwable) {
+            return [];
+        }
+
+        $missing = [];
+        foreach ($rows as $r) {
+            $cid = strtolower(trim((string) ($r['imdb_id'] ?? '')));
+            if (!preg_match('/^tt\d{5,10}$/', $cid) || isset($presentMap[$cid])) {
+                continue;
+            }
+            $missing[] = [
+                'imdb_id'    => $cid,
+                'slug'       => (string) ($r['slug'] ?? 'title'),
+                'title'      => (string) ($r['title'] ?? 'Untitled'),
+                'media_type' => ($r['media_type'] === 'tv') ? 'tv' : 'movie',
+                'year'       => (string) ($r['year'] ?? ''),
+                'poster_url' => (string) ($r['poster_url'] ?? ''),
+            ];
+            if (count($missing) >= $limit) {
+                break;
+            }
+        }
+        return $missing;
+    }
+
     public function deleteRequest(string $imdbId): void
     {
         $cleanImdb = strtolower(trim($imdbId));

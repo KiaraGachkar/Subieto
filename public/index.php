@@ -207,6 +207,7 @@ $router->get('/cron/sync', 'App\Controllers\CronController@sync');
 $router->post('/api/import-subs', 'App\Controllers\CronController@importSubs');
 $router->post('/api/upload-archive', 'App\Controllers\CronController@uploadArchive');
 $router->get('/api/request-queue', 'App\Controllers\CronController@requestQueue');
+$router->get('/api/sync-manifest', 'App\Controllers\CronController@syncManifest');
 $router->get('/sitemap.xml', 'App\Controllers\SeoController@sitemapIndex');
 $router->get('/sitemap-pages.xml', 'App\Controllers\SeoController@sitemapPages');
 $router->get('/sitemap-media-{page}.xml', 'App\Controllers\SeoController@sitemapMedia');

@@ -41,6 +41,80 @@ final class CronController extends BaseController
     /**
      * Returns pending user subtitle requests (`sh_missing_subtitles`) for `subieto_auto_sync.py`.
      */
+
+    /**
+     * Two-Way Sync Manifest (`GET /api/sync-manifest`).
+     * Gives `subieto_auto_sync.py` the exact live truth of the host:
+     *   - `present`: IMDb IDs with BOTH a real ZIP file in storage/subtitles/ AND MySQL rows
+     *   - `requests`: Priority-1 user-requested titles (`sh_missing_subtitles`)
+     *   - `missing_on_site`: Priority-2 titles already on site (`sh_indexed_media`) with no subtitles yet
+     *   - `storage_mb`: Real disk usage of `storage/subtitles/` on host
+     *   - `max_file_mb`: PHP upload_max_filesize / post_max_size effective cap per ZIP
+     */
+    public function syncManifest(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+
+        $expectedToken = $this->ensureCronToken();
+        $providedToken = trim((string) ($_SERVER['HTTP_X_CRON_TOKEN'] ?? $_GET['token'] ?? ''));
+
+        if ($providedToken === '' || !hash_equals($expectedToken, $providedToken)) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'invalid_token']);
+            return;
+        }
+
+        $limit = max(1, min(300, (int) ($_GET['limit'] ?? 200)));
+        $repo = new SubtitleRepository($this->db, $this->prefix, $this->basePath . '/storage');
+        $present = $repo->getVerifiedPresentImdbIds();
+        $requests = $repo->getRequestedQueue(min(100, $limit));
+        $missingOnSite = $repo->getMissingIndexedMedia($present, $limit);
+
+        // Calculate actual disk usage of `storage/subtitles/*.zip`
+        $subDir = $this->basePath . '/storage/subtitles';
+        $storageBytes = 0;
+        $zipCount = 0;
+        if (is_dir($subDir)) {
+            foreach (glob($subDir . '/*.zip') ?: [] as $zf) {
+                $sz = @filesize($zf);
+                if ($sz !== false) {
+                    $storageBytes += $sz;
+                    $zipCount++;
+                }
+            }
+        }
+
+        $parseIniBytes = static function (string $val): int {
+            $val = trim($val);
+            if ($val === '') {
+                return 8 * 1024 * 1024;
+            }
+            $unit = strtolower(substr($val, -1));
+            $num = (float) $val;
+            return match ($unit) {
+                'g' => (int) ($num * 1024 * 1024 * 1024),
+                'm' => (int) ($num * 1024 * 1024),
+                'k' => (int) ($num * 1024),
+                default => (int) $num,
+            };
+        };
+        $upMax   = $parseIniBytes((string) ini_get('upload_max_filesize'));
+        $postMax = $parseIniBytes((string) ini_get('post_max_size'));
+        $effMaxBytes = min(25 * 1024 * 1024, max(1024 * 1024, min($upMax, $postMax)));
+
+        echo json_encode([
+            'ok'              => true,
+            'present'         => $present,
+            'requests'        => $requests,
+            'missing_on_site' => $missingOnSite,
+            'storage_mb'      => round($storageBytes / (1024 * 1024), 2),
+            'zip_count'       => $zipCount,
+            'max_file_mb'     => round($effMaxBytes / (1024 * 1024), 2),
+            'stats'           => $repo->getArchiveStats(),
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
     public function requestQueue(): void
     {
         header('Content-Type: application/json; charset=utf-8');
