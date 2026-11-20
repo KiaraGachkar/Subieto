@@ -1,5 +1,5 @@
 {
-    "name": "subieto/v63-prod",
+    "name": "subieto/v69-clean",
     "description": "PHP 8.1+ Bilingual Subtitle Aggregator with Hardened Security, Geo-Targeted Ads, Programmatic SEO & Partitioned Static Cache",
     "type": "project",
     "require": {

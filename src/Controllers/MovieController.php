@@ -5,15 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\RateLimiter;
-use App\Providers\FreeOpenSubtitlesProvider;
-use App\Providers\OpenSubtitlesProvider;
-use App\Providers\PodnapisiProvider;
-use App\Providers\SubdlProvider;
-use App\Providers\Subf2mProvider;
-use App\Providers\SubzoneProvider;
-use App\Providers\SubkadeProvider;
 use App\Providers\TmdbMetadataProvider;
-use App\Providers\YifySubtitlesProvider;
 use App\Services\LanguageMap;
 use App\Services\LocaleService;
 use App\Services\ProxyDownloadService;
@@ -153,27 +145,9 @@ final class MovieController extends BaseController
 
         $this->metrics->recordPageView();
 
-        $freeOpenSub = new FreeOpenSubtitlesProvider($this->http, $this->settings, $this->cache);
-        $podnapisi   = new PodnapisiProvider($this->http, $this->settings);
-        $yify        = new YifySubtitlesProvider($this->http, $this->settings);
-        $subf2m      = new Subf2mProvider($this->http, $this->settings, $this->cache);
-        $subzone     = new SubzoneProvider($this->http, $this->settings, $this->cache);
-        $subkade     = new SubkadeProvider($this->http, $this->settings, $this->cache);
-        $subdl       = new SubdlProvider($this->http, $this->settings);
-        $openSub     = new OpenSubtitlesProvider($this->http, $this->settings);
-
         $repository = new SubtitleRepository($this->db, $this->prefix, $this->basePath . '/storage');
-        $aggregator = new SubtitleAggregatorService(
-            [$freeOpenSub, $podnapisi, $yify, $subzone, $subf2m, $subkade, $subdl, $openSub],
-            $this->cache,
-            $this->settings,
-            $this->http,
-            $repository
-        );
-        // Avoid double-scraping on direct /season-N pages: fetch requested season directly when specified
-        $allSubtitles = ($season !== null && $media->mediaType === 'tv')
-            ? $aggregator->getSubtitlesForImdb($media->imdbId, $media->mediaType, $media->title, $media->year, $season)
-            : $aggregator->getSubtitlesForImdb($media->imdbId, $media->mediaType, $media->title, $media->year);
+        $aggregator = new SubtitleAggregatorService($this->settings, $repository);
+        $allSubtitles = $aggregator->getSubtitlesForImdb($media->imdbId, ($season !== null && $media->mediaType === 'tv') ? $season : null);
 
         $availableSeasons = [];
         if ($media->mediaType === 'tv') {
@@ -208,10 +182,7 @@ final class MovieController extends BaseController
         $langCodes = array_values(array_unique(array_map(static fn($s): string => $s->languageCode, $allSubtitles)));
         $this->metrics->indexMediaForSeo($media, $seasonNumbers, $langCodes);
 
-        $faTotal = count(array_filter($allSubtitles, static fn($s) => $s->languageCode === 'fa'));
-        if ($faTotal === 0) {
-            $this->metrics->recordMissingPersianSubtitle($media);
-        }
+        // User demand is recorded explicitly via the "Request Subtitle" button (/api/request-subtitle)
 
         $displayedSubtitles = $allSubtitles;
         if ($langInfo !== null) {
@@ -337,8 +308,49 @@ final class MovieController extends BaseController
             'lang'     => $payload['lang'] ?? 'fa',
         ];
 
-        $openSub = new OpenSubtitlesProvider($this->http, $this->settings);
-        $downloader = new ProxyDownloadService($this->http, $this->settings, $openSub, $this->db, $this->prefix);
+        $downloader = new ProxyDownloadService($this->settings, $this->db, $this->prefix);
         $downloader->deliver($payload['url'], $payload['file'] ?? 'subtitle.srt', $meta);
+    }
+
+    /**
+     * Records an explicit user subtitle request so `subieto_auto_sync.py` prioritizes it.
+     */
+    public function requestSubtitle(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+
+        $limiter = new RateLimiter($this->db, $this->prefix);
+        if (!$limiter->allow('sub_request', 20, 60)) {
+            http_response_code(429);
+            echo json_encode(['ok' => false, 'error' => 'rate_limited']);
+            return;
+        }
+
+        $raw = file_get_contents('php://input');
+        $body = is_string($raw) ? json_decode($raw, true) : null;
+        $imdbId = strtolower(trim((string) ($body['imdb'] ?? $_POST['imdb'] ?? '')));
+        if (!preg_match('/^tt\d{5,10}$/', $imdbId)) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'invalid_imdb']);
+            return;
+        }
+
+        $tmdb = new TmdbMetadataProvider($this->http, $this->settings, $this->cache);
+        $media = $tmdb->findByImdbId($imdbId);
+        if ($media === null) {
+            http_response_code(404);
+            echo json_encode(['ok' => false, 'error' => 'not_found']);
+            return;
+        }
+
+        $this->metrics->recordMissingPersianSubtitle($media);
+        $this->metrics->indexMediaForSeo($media);
+
+        echo json_encode([
+            'ok'      => true,
+            'imdb_id' => $imdbId,
+            'title'   => $media->title,
+        ], JSON_UNESCAPED_UNICODE);
     }
 }

@@ -193,6 +193,7 @@ $router->get('/search', 'App\Controllers\SearchController@search');
 $router->get('/api/suggest', 'App\Controllers\SearchController@suggest');
 $router->post('/api/ad-click', 'App\Controllers\AdTrackController@click');
 $router->post('/api/sub-vote', 'App\Controllers\VoteController@vote');
+$router->post('/api/request-subtitle', 'App\Controllers\MovieController@requestSubtitle');
 $router->post('/api/telegram-webhook', 'App\Controllers\TelegramController@webhook');
 $router->get('/api/ad-slots', 'App\Controllers\AdTrackController@slots');
 $router->get('/subtitles/release/{group}', 'App\Controllers\MovieController@showReleaseGroup');
@@ -203,6 +204,9 @@ $router->get('/subtitles/{imdbId}/{slug}', 'App\Controllers\MovieController@show
 $router->get('/subtitles/{imdbId}', 'App\Controllers\MovieController@show');
 $router->get('/download', 'App\Controllers\MovieController@download');
 $router->get('/cron/sync', 'App\Controllers\CronController@sync');
+$router->post('/api/import-subs', 'App\Controllers\CronController@importSubs');
+$router->post('/api/upload-archive', 'App\Controllers\CronController@uploadArchive');
+$router->get('/api/request-queue', 'App\Controllers\CronController@requestQueue');
 $router->get('/sitemap.xml', 'App\Controllers\SeoController@sitemapIndex');
 $router->get('/sitemap-pages.xml', 'App\Controllers\SeoController@sitemapPages');
 $router->get('/sitemap-media-{page}.xml', 'App\Controllers\SeoController@sitemapMedia');
@@ -217,6 +221,7 @@ $router->post('/admin/settings', 'App\Controllers\AdminController@saveSettings')
 $router->post('/admin/clear-cache', 'App\Controllers\AdminController@clearCache');
 $router->post('/admin/test-apis', 'App\Controllers\AdminController@testApis');
 $router->post('/admin/sync-imdb', 'App\Controllers\AdminController@syncImdbNow');
+$router->post('/admin/bulk-seed', 'App\Controllers\AdminController@bulkSeed');
 
 $router->dispatch($requestMethod, $requestUri, [
     'basePath'  => $basePath,

@@ -328,143 +328,94 @@ $adSlotsMeta = [
         <form action="/admin/settings" method="POST" x-show="tab !== 'overview'" x-cloak class="space-y-6">
             <input type="hidden" name="_csrf" value="<?= View::e(Session::csrfToken()) ?>">
 
-            <!-- TAB 2: SOURCES & LANGUAGES -->
+            <!-- TAB 2: LOCAL ARCHIVE & METADATA -->
             <div x-show="tab === 'sources'" class="space-y-5">
                 <div class="bg-white border border-[#efeae1] rounded-3xl p-6 shadow-sm space-y-5">
                     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#efeae1] pb-4">
                         <div>
-                            <h2 class="font-display text-base font-bold text-[#2b302d]"><?= $t('منابع رایگان زیرنویس (بدون نیاز به API Key)', 'Free Subtitle Providers (Zero API Key)') ?></h2>
-                            <p class="text-xs text-[#6c655a]"><?= $t('تمامی ۴ منبع رایگان، زیرنویس‌های همه زبان‌های دنیا را دریافت می‌کنند.', 'All 4 free providers fetch every available language globally.') ?></p>
+                            <h2 class="font-display text-base font-bold text-[#2b302d]"><?= $t('حالت آرشیو مستقل محلی (بدون اسکرپر خارجی)', 'Clean Local Archive Mode (Zero External Scrapers)') ?></h2>
+                            <p class="text-xs text-[#6c655a]"><?= $t('سایت فقط نام و پوستر فیلم‌ها را از متادیتا می‌خواند و تمام زیرنویس‌ها را مستقیم از فایل‌های زیپ اختصاصی روی هاست تحویل می‌دهد.', 'Metadata & posters load via TMDB/Cinemeta; all subtitles stream directly from self-hosted ZIP files in storage/subtitles/.') ?></p>
                         </div>
                         <button type="button" @click="runLiveTest()" :disabled="testing" class="px-4 py-2 rounded-full bg-[#2e6f40] hover:bg-[#245832] text-white text-xs font-bold flex items-center gap-1.5 transition">
                             <span class="material-symbols-outlined text-[16px]">speed</span>
-                            <span x-text="testing ? '<?= $t('در حال تست...', 'Testing...') ?>' : '<?= $t('تست زنده منابع', 'Run Live Diagnostics') ?>'"></span>
+                            <span x-text="testing ? '<?= $t('در حال بررسی...', 'Checking...') ?>' : '<?= $t('تست سلامت سیستم', 'Run System Health Check') ?>'"></span>
                         </button>
                     </div>
 
-                    <div x-show="testData !== null" x-cloak class="grid grid-cols-2 sm:grid-cols-7 gap-2.5 text-xs bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-4">
+                    <div x-show="testData !== null" x-cloak class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-4">
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
-                            <div class="text-[11px] text-[#6c655a]">Metadata</div>
-                            <div class="font-bold mt-0.5" :class="testData?.metadata?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.metadata?.ok ? ('OK (' + testData.metadata.ms + 'ms)') : 'Failed'"></div>
+                            <div class="text-[11px] text-[#6c655a]">Metadata (Posters/Info)</div>
+                            <div class="font-bold mt-0.5" :class="testData?.metadata?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.metadata?.ok ? (testData.metadata.source + ' (' + testData.metadata.ms + 'ms)') : 'Failed'"></div>
                         </div>
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
-                            <div class="text-[11px] text-[#6c655a]">OpenSub Free</div>
-                            <div class="font-bold mt-0.5" :class="testData?.opensub_free?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.opensub_free?.ok ? (testData.opensub_free.count + ' subs') : 'Failed'"></div>
+                            <div class="text-[11px] text-[#6c655a]">storage/subtitles/</div>
+                            <div class="font-bold mt-0.5" :class="testData?.storage?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.storage?.ok ? ('Writable (' + testData.storage.zips + ' ZIPs)') : 'Not Writable'"></div>
                         </div>
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
-                            <div class="text-[11px] text-[#6c655a]">Podnapisi</div>
-                            <div class="font-bold mt-0.5" :class="testData?.podnapisi?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.podnapisi?.ok ? (testData.podnapisi.count + ' subs') : 'Failed'"></div>
+                            <div class="text-[11px] text-[#6c655a]">PHP ZipArchive</div>
+                            <div class="font-bold mt-0.5" :class="testData?.zip_ext?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.zip_ext?.ok ? 'Enabled' : 'Missing'"></div>
                         </div>
                         <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
-                            <div class="text-[11px] text-[#6c655a]">YIFY</div>
-                            <div class="font-bold mt-0.5" :class="testData?.yify?.ok ? 'text-emerald-700' : 'text-rose-600'" x-text="testData?.yify?.ok ? (testData.yify.count + ' subs') : 'Failed'"></div>
-                        </div>
-                        <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
-                            <div class="text-[11px] text-[#6c655a]">Subf2m</div>
-                            <div class="font-bold mt-0.5" :class="testData?.subf2m?.ok ? 'text-emerald-700' : 'text-amber-700'" x-text="testData?.subf2m?.ok ? (testData.subf2m.count + ' subs') : 'No results / blocked'"></div>
-                        </div>
-                        <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
-                            <div class="text-[11px] text-[#6c655a]">Subzone.ir</div>
-                            <div class="font-bold mt-0.5" :class="testData?.subzone?.ok ? 'text-emerald-700' : 'text-amber-700'" x-text="testData?.subzone?.ok ? (testData.subzone.count + ' subs') : 'No results / blocked'"></div>
-                        </div>
-                        <div class="bg-white rounded-xl p-3 border border-[#efeae1]">
-                            <div class="text-[11px] text-[#6c655a]">Subkade.ir</div>
-                            <div class="font-bold mt-0.5" :class="testData?.subkade?.ok ? 'text-emerald-700' : 'text-amber-700'" x-text="testData?.subkade?.ok ? (testData.subkade.count + ' subs') : 'No results / blocked'"></div>
+                            <div class="text-[11px] text-[#6c655a]">Local Subtitles</div>
+                            <div class="font-bold mt-0.5 text-emerald-700" x-text="(testData?.archive?.total ?? 0) + ' subs (' + (testData?.archive?.persian ?? 0) + ' FA)'"></div>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
-                        <label class="flex items-center justify-between bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-3.5 cursor-pointer">
-                            <span class="font-bold">OpenSubtitles Free</span>
-                            <input type="checkbox" name="free_opensub_enabled" value="1" <?= ($config['providers.free_opensub_enabled'] ?? '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 accent-[#2e6f40]">
-                        </label>
-                        <label class="flex items-center justify-between bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-3.5 cursor-pointer">
-                            <span class="font-bold">Podnapisi XML</span>
-                            <input type="checkbox" name="podnapisi_enabled" value="1" <?= ($config['providers.podnapisi_enabled'] ?? '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 accent-[#2e6f40]">
-                        </label>
-                        <label class="flex items-center justify-between bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-3.5 cursor-pointer">
-                            <span class="font-bold">YIFY Subtitles</span>
-                            <input type="checkbox" name="yify_enabled" value="1" <?= ($config['providers.yify_enabled'] ?? '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 accent-[#2e6f40]">
-                        </label>
-                        <label class="flex items-center justify-between bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-3.5 cursor-pointer">
-                            <span class="font-bold">Subf2m Scraper</span>
-                            <input type="checkbox" name="subf2m_enabled" value="1" <?= ($config['providers.subf2m_enabled'] ?? '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 accent-[#2e6f40]">
-                        </label>
-                        <label class="flex items-center justify-between bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-3.5 cursor-pointer">
-                            <span class="font-bold">Subzone.ir (FA)</span>
-                            <input type="checkbox" name="subzone_enabled" value="1" <?= ($config['providers.subzone_enabled'] ?? '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 accent-[#2e6f40]">
-                        </label>
-                        <label class="flex items-center justify-between bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-3.5 cursor-pointer">
-                            <span class="font-bold">Subkade.ir (FA)</span>
-                            <input type="checkbox" name="subkade_enabled" value="1" <?= ($config['providers.subkade_enabled'] ?? '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 accent-[#2e6f40]">
-                        </label>
+                    <div class="bg-[#faf7f2] border border-[#efeae1] rounded-2xl p-4 space-y-3 text-xs">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <span class="font-bold text-[#2b302d]"><?= $t('اتصال اسکریپت subieto_auto_sync.py به هاست', 'Connect subieto_auto_sync.py to Host') ?></span>
+                            <div class="flex items-center gap-2">
+                                <span class="px-2.5 py-0.5 rounded-full bg-[#d6efe0] text-[#2e6f40] font-bold"><?= number_format((int) ($archiveStats['total'] ?? 0)) ?> <?= $t('فایل محلی', 'local subs') ?></span>
+                                <span class="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold"><?= number_format((int) ($archiveStats['persian'] ?? 0)) ?> <?= $t('فارسی', 'FA') ?></span>
+                                <span class="px-2.5 py-0.5 rounded-full bg-white border border-[#efeae1] text-[#6c655a] font-bold"><?= number_format((int) ($archiveStats['titles'] ?? 0)) ?> <?= $t('عنوان', 'titles') ?></span>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-bold text-[#6c655a] mb-1">Upload Endpoint (`site_url`)</label>
+                                <input type="text" readonly dir="ltr" onclick="this.select()" value="<?= View::e($cronUrl ?? '') ?>" class="w-full bg-white border border-[#d8d3c9] rounded-xl px-3 py-2 font-mono text-[11px] text-[#2b302d]">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-[#6c655a] mb-1">Secret Token (`cron_token`)</label>
+                                <input type="text" readonly dir="ltr" onclick="this.select()" value="<?= View::e($cronToken ?? '') ?>" class="w-full bg-white border border-[#d8d3c9] rounded-xl px-3 py-2 font-mono text-[11px] text-[#2b302d]">
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="pt-2">
+                    <div class="pt-1">
                         <label class="block text-xs font-bold text-[#2b302d] mb-1"><?= $t('ترتیب اولویت نمایش زبان‌ها (کد دوحرفی ISO)', 'Priority Languages Order (ISO 2-letter codes)') ?></label>
                         <input type="text" name="priority_languages" dir="ltr" x-model="priorityLangs" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-4 py-2.5 text-xs font-mono text-[#2b302d]">
                         <div class="flex flex-wrap items-center gap-1.5 mt-2 text-[11px]">
                             <span class="text-[#6c655a]"><?= $t('پیش‌تنظیم سریع:', 'Quick presets:') ?></span>
+                            <button type="button" @click="priorityLangs = 'fa,en,ar,tr'" class="px-2.5 py-0.5 rounded-full bg-[#f5f1ea] hover:bg-[#efeae1] font-semibold">Persian First</button>
                             <button type="button" @click="priorityLangs = 'en,fa,ar,es,fr,tr'" class="px-2.5 py-0.5 rounded-full bg-[#f5f1ea] hover:bg-[#efeae1] font-semibold">Global + MENA</button>
                             <button type="button" @click="priorityLangs = 'en,es,pt,fr,de,it'" class="px-2.5 py-0.5 rounded-full bg-[#f5f1ea] hover:bg-[#efeae1] font-semibold">US / Europe</button>
-                            <button type="button" @click="priorityLangs = 'fa,en,ar,tr'" class="px-2.5 py-0.5 rounded-full bg-[#f5f1ea] hover:bg-[#efeae1] font-semibold">Persian First</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="bg-white border border-[#efeae1] rounded-3xl p-6 shadow-sm space-y-4">
                     <div>
-                        <h3 class="font-display text-sm font-bold text-[#2b302d]"><?= $t('کلیدهای API اختیاری', 'Optional External API Keys') ?></h3>
-                        <p class="text-xs text-[#6c655a]"><?= $t('در صورت خالی بودن، سایت به صورت ۱۰۰٪ رایگان کار می‌کند.', 'Leave blank to use 100% free Cinemeta metadata and free subtitle endpoints.') ?></p>
+                        <h3 class="font-display text-sm font-bold text-[#2b302d]"><?= $t('کلید TMDB و ربات تلگرام', 'TMDB Metadata Key & Telegram Bot') ?></h3>
+                        <p class="text-xs text-[#6c655a]"><?= $t('در صورت خالی بودن TMDB، اطلاعات فیلم‌ها و پوسترها به‌صورت رایگان از Cinemeta خوانده می‌شود.', 'Leave TMDB blank to fetch posters and metadata 100% free via Cinemeta.') ?></p>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
                         <div>
-                            <label class="block font-bold text-[#6c655a] mb-1">TMDB API Key</label>
+                            <label class="block font-bold text-[#6c655a] mb-1">TMDB API Key (Optional)</label>
                             <input type="text" name="tmdb_api_key" dir="ltr" value="<?= View::e($config['apis.tmdb_api_key'] ?? '') ?>" placeholder="Optional" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5 font-mono">
                         </div>
-                        <div>
-                            <label class="block font-bold text-[#6c655a] mb-1">SubDL API Key</label>
-                            <input type="text" name="subdl_api_key" dir="ltr" value="<?= View::e($config['apis.subdl_api_key'] ?? '') ?>" placeholder="Optional" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5 font-mono">
-                        </div>
-                        <div>
-                            <label class="block font-bold text-[#6c655a] mb-1">OpenSubtitles API Key</label>
-                            <input type="text" name="opensubtitles_api_key" dir="ltr" value="<?= View::e($config['apis.opensubtitles_api_key'] ?? '') ?>" placeholder="Optional" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5 font-mono">
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs pt-3 border-t border-[#efeae1]">
                         <div>
                             <label class="block font-bold text-[#6c655a] mb-1">Telegram Bot Token (BotFather)</label>
                             <input type="text" name="telegram_bot_token" dir="ltr" value="<?= View::e($config['telegram.bot_token'] ?? '') ?>" placeholder="123456:ABC-DEF..." class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5 font-mono">
                         </div>
                         <div>
-                            <label class="block font-bold text-[#6c655a] mb-1">Telegram Webhook Secret (Optional)</label>
-                            <input type="text" name="telegram_webhook_secret" dir="ltr" value="<?= View::e($config['telegram.webhook_secret'] ?? '') ?>" placeholder="my_secret_token" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5 font-mono">
+                            <label class="block font-bold text-[#6c655a] mb-1">Telegram Webhook Secret</label>
+                            <input type="text" name="telegram_webhook_secret" dir="ltr" value="<?= View::e($config['telegram.webhook_secret'] ?? '') ?>" placeholder="Optional" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-3.5 py-2.5 font-mono">
                         </div>
                     </div>
                     <div class="text-[11px] text-[#6c655a] font-mono" dir="ltr">Webhook URL: <?= View::e(\App\Services\SeoHelper::getBaseUrl() . '/api/telegram-webhook') ?></div>
                 </div>
             </div>
-
-
-                <!-- Permanent MySQL Subtitle Archive & Cron Sync -->
-                <div class="bg-white border border-[#efeae1] rounded-3xl p-6 shadow-sm space-y-4">
-                    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#efeae1] pb-3">
-                        <div>
-                            <h3 class="font-display text-sm font-bold text-[#2b302d]"><?= $t('آرشیو دائمی دیتابیس و همگام‌سازی خودکار (Cron)', 'Permanent Subtitle Archive & Auto-Sync (Cron)') ?></h3>
-                            <p class="text-xs text-[#6c655a]"><?= $t('تمام زیرنویس‌های دریافت‌شده از Subzone.ir و Subf2m در جدول دائمی دیتابیس ذخیره می‌شوند و با پاک کردن کش حذف نمی‌شوند.', 'All fetched subtitles from Subzone.ir & Subf2m are stored permanently in MySQL and survive cache purges.') ?></p>
-                        </div>
-                        <div class="flex items-center gap-2 text-xs">
-                            <span class="px-3 py-1 rounded-full bg-[#d6efe0] text-[#2e6f40] font-bold"><?= number_format((int) ($archiveStats['total'] ?? 0)) ?> <?= $t('زیرنویس', 'subs') ?></span>
-                            <span class="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-bold"><?= number_format((int) ($archiveStats['persian'] ?? 0)) ?> <?= $t('فارسی', 'FA') ?></span>
-                            <span class="px-3 py-1 rounded-full bg-[#f5f1ea] text-[#6c655a] font-bold"><?= number_format((int) ($archiveStats['titles'] ?? 0)) ?> <?= $t('عنوان', 'titles') ?></span>
-                        </div>
-                    </div>
-
-                    <div class="text-xs space-y-1.5">
-                        <label class="block font-bold text-[#6c655a]"><?= $t('لینک وب‌هوک Cron (قابل تنظیم در cPanel یا سرویس رایگان cron-job.org هر ۵ دقیقه):', 'Cron Webhook URL (schedule every 5 mins in cPanel or cron-job.org):') ?></label>
-                        <input type="text" readonly dir="ltr" onclick="this.select()" value="<?= View::e($cronUrl ?? '') ?>" class="w-full bg-[#f5f1ea] border border-[#d8d3c9] rounded-2xl px-4 py-2.5 font-mono text-[11px] text-[#2b302d]">
-                    </div>
-                </div>
 
             <!-- TAB 3: ADS & SAMPLE BANNER PREVIEW -->
             <div x-show="tab === 'ads'" class="space-y-5">
@@ -672,17 +623,57 @@ $adSlotsMeta = [
         </form>
 
 
-        <!-- Manual Instant IMDb Archive Sync -->
-        <div x-show="tab === 'sources'" x-cloak class="bg-white border border-[#efeae1] rounded-3xl p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
-            <div>
-                <h3 class="font-display text-sm font-bold text-[#2b302d]"><?= $t('همگام‌سازی فوری و کامل یک فیلم یا سریال', 'Instant Full Sync by IMDb ID') ?></h3>
-                <p class="text-xs text-[#6c655a] mt-0.5"><?= $t('شناسه IMDb را وارد کنید تا تمام فصل‌ها و زبان‌های آن از Subzone.ir و Subf2m در دیتابیس ذخیره شوند.', 'Enter an IMDb ID to fetch and permanently archive all seasons and languages.') ?></p>
+        <!-- Queue IMDb for Auto-Sync & Purge Legacy External Subtitles -->
+        <div x-show="tab === 'sources'" x-cloak class="bg-white border border-[#efeae1] rounded-3xl p-6 shadow-sm space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h3 class="font-display text-sm font-bold text-[#2b302d]"><?= $t('افزودن عنوان به صف دانلود اختصاصی', 'Queue IMDb ID for Auto-Sync') ?></h3>
+                    <p class="text-xs text-[#6c655a] mt-0.5"><?= $t('شناسه IMDb را وارد کنید تا در اولویت صف subieto_auto_sync.py روی سیستم شما قرار بگیرد.', 'Adds the title to your high-priority request queue so subieto_auto_sync.py downloads and uploads it next.') ?></p>
+                </div>
+                <form action="/admin/sync-imdb" method="POST" class="flex items-center gap-2">
+                    <input type="hidden" name="_csrf" value="<?= View::e(Session::csrfToken()) ?>">
+                    <input type="text" name="imdb_id" dir="ltr" required placeholder="tt31510819" pattern="tt[0-9]{5,10}" class="bg-[#f5f1ea] border border-[#d8d3c9] rounded-full px-4 py-2 text-xs font-mono w-36">
+                    <button type="submit" class="px-4 py-2 rounded-full bg-[#2e6f40] hover:bg-[#245832] text-white text-xs font-bold transition">
+                        <?= $t('افزودن به صف', 'Add to Queue') ?>
+                    </button>
+                </form>
             </div>
-            <form action="/admin/sync-imdb" method="POST" class="flex items-center gap-2">
+            <?php if ((int) ($archiveStats['legacy'] ?? 0) > 0): ?>
+            <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#efeae1]">
+                <div class="text-xs text-amber-900">
+                    <?= $t('تعداد ' . number_format((int) $archiveStats['legacy']) . ' زیرنویس خارجی قدیمی در دیتابیس باقی مانده است (در سایت نمایش داده نمی‌شوند).', number_format((int) $archiveStats['legacy']) . ' legacy external subtitle rows remain in MySQL (hidden from site).') ?>
+                </div>
+                <form action="/admin/clear-cache" method="POST">
+                    <input type="hidden" name="_csrf" value="<?= View::e(Session::csrfToken()) ?>">
+                    <input type="hidden" name="mode" value="purge_external">
+                    <button type="submit" class="px-4 py-2 rounded-full bg-rose-100 hover:bg-rose-200 text-rose-900 text-xs font-bold transition">
+                        <?= $t('حذف زیرنویس‌های خارجی قدیمی', 'Purge Legacy External Rows') ?>
+                    </button>
+                </form>
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- Bulk Seed Catalog for Background Cron -->
+        <div x-show="tab === 'sources'" x-cloak class="bg-white border border-[#efeae1] rounded-3xl p-6 shadow-sm space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h3 class="font-display text-sm font-bold text-[#2b302d]"><?= $t('ورود دسته‌جمعی فیلم‌ها و سریال‌ها (Bulk Seed)', 'Bulk Seed Popular Movies & Series') ?></h3>
+                    <p class="text-xs text-[#6c655a] mt-0.5"><?= $t('صدها فیلم و سریال برتر را یکجا وارد جدول دیتابیس می‌کند تا کران‌جاب به‌صورت خودکار زیرنویس همه آن‌ها را دریافت کند.', 'Adds hundreds of top movies & TV series into sh_indexed_media so your Cron job syncs their subtitles automatically.') ?></p>
+                </div>
+                <form action="/admin/bulk-seed" method="POST">
+                    <input type="hidden" name="_csrf" value="<?= View::e(Session::csrfToken()) ?>">
+                    <input type="hidden" name="seed_catalog" value="1">
+                    <button type="submit" class="px-4 py-2 rounded-full bg-[#2b302d] hover:bg-[#181b19] text-white text-xs font-bold transition">
+                        <?= $t('افزودن خودکار عناوین برتر', 'Auto-Seed Top Catalog') ?>
+                    </button>
+                </form>
+            </div>
+            <form action="/admin/bulk-seed" method="POST" class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-[#efeae1]">
                 <input type="hidden" name="_csrf" value="<?= View::e(Session::csrfToken()) ?>">
-                <input type="text" name="imdb_id" dir="ltr" required placeholder="tt1375666" pattern="tt[0-9]{5,10}" class="bg-[#f5f1ea] border border-[#d8d3c9] rounded-full px-4 py-2 text-xs font-mono w-36">
-                <button type="submit" class="px-4 py-2 rounded-full bg-[#2e6f40] hover:bg-[#245832] text-white text-xs font-bold transition">
-                    <?= $t('همگام‌سازی الان', 'Sync Now') ?>
+                <input type="text" name="custom_imdb_ids" dir="ltr" placeholder="tt31510819, tt9813792, tt0944947 ..." class="flex-1 bg-[#f5f1ea] border border-[#d8d3c9] rounded-full px-4 py-2 text-xs font-mono">
+                <button type="submit" class="px-4 py-2 rounded-full bg-[#f5f1ea] hover:bg-[#efeae1] text-[#2b302d] text-xs font-bold transition shrink-0">
+                    <?= $t('افزودن کدهای IMDb دلخواه', 'Queue Custom IMDb IDs') ?>
                 </button>
             </form>
         </div>

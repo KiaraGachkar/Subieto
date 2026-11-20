@@ -377,7 +377,7 @@ final class TmdbMetadataProvider
 
     private function findByImdbCinemeta(string $imdbId): ?MediaItem
     {
-        $cacheKey = "cinemeta_imdb_{$imdbId}";
+        $cacheKey = "cinemeta_imdb_v2_{$imdbId}";
         $cached = $this->cache->get($cacheKey);
         if ($cached === ['_miss' => true]) {
             return null;
@@ -391,11 +391,24 @@ final class TmdbMetadataProvider
             'series' => self::CINEMETA_URL . "/meta/series/{$imdbId}.json",
         ]);
 
+        $movieMeta  = is_array($responses['movie']['meta'] ?? null) && !empty($responses['movie']['meta']['name'])
+            ? $responses['movie']['meta'] : null;
+        $seriesMeta = is_array($responses['series']['meta'] ?? null) && !empty($responses['series']['meta']['name'])
+            ? $responses['series']['meta'] : null;
+
         $item = null;
-        if (is_array($responses['movie']['meta'] ?? null) && !empty($responses['movie']['meta']['name'])) {
-            $item = $this->mapCinemetaItem($responses['movie']['meta'], 'movie');
-        } elseif (is_array($responses['series']['meta'] ?? null) && !empty($responses['series']['meta']['name'])) {
-            $item = $this->mapCinemetaItem($responses['series']['meta'], 'tv');
+        // Cinemeta often returns a series payload even on /meta/movie/{id}.json; check actual type & videos first
+        if ($seriesMeta !== null && (
+            strtolower((string) ($seriesMeta['type'] ?? '')) === 'series'
+            || !empty($seriesMeta['videos'])
+            || $movieMeta === null
+            || strtolower((string) ($movieMeta['type'] ?? '')) === 'series'
+        )) {
+            $item = $this->mapCinemetaItem($seriesMeta, 'tv');
+        } elseif ($movieMeta !== null) {
+            $detectedType = (strtolower((string) ($movieMeta['type'] ?? '')) === 'series' || !empty($movieMeta['videos']))
+                ? 'tv' : 'movie';
+            $item = $this->mapCinemetaItem($movieMeta, $detectedType);
         }
 
         if ($item !== null) {
@@ -415,6 +428,12 @@ final class TmdbMetadataProvider
         $imdbId = strtolower(trim((string) ($meta['imdb_id'] ?? $meta['id'] ?? '')));
         if (!preg_match('/^tt\d{5,10}$/', $imdbId)) {
             return null;
+        }
+        $rawType = strtolower(trim((string) ($meta['type'] ?? '')));
+        if ($rawType === 'series' || $rawType === 'tv' || !empty($meta['videos'])) {
+            $mediaType = 'tv';
+        } elseif ($rawType === 'movie') {
+            $mediaType = 'movie';
         }
         $title = trim((string) ($meta['name'] ?? 'Untitled'));
         $yearRaw = (string) ($meta['releaseInfo'] ?? $meta['year'] ?? '');

@@ -7,13 +7,7 @@ namespace App\Controllers;
 use App\Core\PasswordHasher;
 use App\Core\RateLimiter;
 use App\Core\Session;
-use App\Providers\FreeOpenSubtitlesProvider;
-use App\Providers\PodnapisiProvider;
-use App\Providers\Subf2mProvider;
-use App\Providers\SubzoneProvider;
-use App\Providers\SubkadeProvider;
 use App\Providers\TmdbMetadataProvider;
-use App\Providers\YifySubtitlesProvider;
 use App\Services\LocaleService;
 use App\Services\SeoHelper;
 use App\Services\SubtitleRepository;
@@ -133,11 +127,12 @@ final class AdminController extends BaseController
             $cronToken = bin2hex(random_bytes(20));
             $this->settings->updateMany(['cron.secret_token' => $cronToken]);
         }
-        $cronUrl = SeoHelper::getBaseUrl() . '/cron/sync?token=' . $cronToken;
+        $cronUrl = SeoHelper::getBaseUrl() . '/api/upload-archive';
 
         $this->render('admin/dashboard', [
             'archiveStats'      => $repo->getArchiveStats(),
             'cronUrl'           => $cronUrl,
+            'cronToken'         => $cronToken,
             'adminLocale'       => LocaleService::resolveAdminLocale(),
             'pageTitle'         => 'Admin Studio | Subieto',
             'config'            => array_diff_key($this->settings->all(), ['admin.password_hash' => 1, 'app.secret_key' => 1]),
@@ -313,6 +308,11 @@ final class AdminController extends BaseController
         } elseif ($mode === 'demand') {
             $this->db->exec("TRUNCATE TABLE `{$this->prefix}missing_subtitles`");
             Session::flash('success', 'Cleared missing subtitle demand log.');
+        } elseif ($mode === 'purge_external') {
+            $repo = new SubtitleRepository($this->db, $this->prefix, $this->basePath . '/storage');
+            $purged = $repo->purgeExternalRows();
+            $this->pageCache?->clearAll();
+            Session::flash('success', "تعداد {$purged} زیرنویس خارجی قدیمی حذف شد؛ اکنون فقط فایل‌های آرشیو مستقیم (localzip) در سایت نمایش داده می‌شوند.");
         } else {
             $deleted = $this->cache->clear();
             $pagesDeleted = $this->pageCache?->clearAll() ?? 0;
@@ -332,60 +332,44 @@ final class AdminController extends BaseController
         $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($jsonInput['_csrf'] ?? ($_POST['_csrf'] ?? null));
         if (!Session::verifyCsrf(is_string($token) ? $token : null)) {
             http_response_code(403);
-            echo json_encode(['error' => 'csrf', 'received' => is_string($token) ? substr($token, 0, 8) : null]);
+            echo json_encode(['error' => 'csrf']);
             return;
         }
 
-        $tmdb      = new TmdbMetadataProvider($this->http, $this->settings, $this->cache);
-        $freeOs    = new FreeOpenSubtitlesProvider($this->http, $this->settings, $this->cache);
-        $podnapisi = new PodnapisiProvider($this->http, $this->settings);
-        $yify      = new YifySubtitlesProvider($this->http, $this->settings);
-        $subf2m    = new Subf2mProvider($this->http, $this->settings, $this->cache);
-        $subzone   = new SubzoneProvider($this->http, $this->settings, $this->cache);
-        $subkade   = new SubkadeProvider($this->http, $this->settings, $this->cache);
+        $tmdb = new TmdbMetadataProvider($this->http, $this->settings, $this->cache);
+        $repo = new SubtitleRepository($this->db, $this->prefix, $this->basePath . '/storage');
 
         try {
             $t0 = microtime(true);
             $metaItem = $tmdb->findByImdbId('tt1375666');
             $metaMs   = (int) round((microtime(true) - $t0) * 1000);
 
-            // Run all primary free provider checks concurrently in a single parallel batch
-            $batch = [];
-            if ($reqOs = $freeOs->buildSearchRequest('tt1375666', 'movie')) {
-                $batch['os'] = $reqOs;
+            $subDir = $this->basePath . '/storage/subtitles';
+            if (!is_dir($subDir)) {
+                @mkdir($subDir, 0755, true);
             }
-            if ($reqPod = $podnapisi->buildSearchRequest('tt1375666', 'movie')) {
-                $batch['pod'] = $reqPod;
-            }
-            if ($reqYify = $yify->buildSearchRequest('tt1375666', 'movie')) {
-                $batch['yify'] = $reqYify;
-            }
-            $batchRes = $this->http->getJsonBatch($batch, 7);
-
-            $osItems   = isset($batch['os']) ? $freeOs->parseSearchResponse($batchRes['os'] ?? null) : [];
-            $podItems  = isset($batch['pod']) ? $podnapisi->parseSearchResponse($batchRes['pod'] ?? null) : [];
-            $yifyItems = isset($batch['yify']) ? $yify->parseSearchResponse($batchRes['yify'] ?? null) : [];
-            $s2mItems  = $subf2m->searchByTitle('Inception', '2010');
-            $szItems   = $subzone->searchByTitle('Inception', '2010');
-            $skItems   = $subkade->searchByTitle('Inception', '2010', 'movie', null);
+            $storageOk = is_dir($subDir) && is_writable($subDir);
+            $zipOk     = class_exists(\ZipArchive::class);
+            $stats     = $repo->getArchiveStats();
+            $zipCount  = $storageOk ? count(glob($subDir . '/*.zip') ?: []) : 0;
 
             echo json_encode([
-                'metadata'      => ['ok' => $metaItem !== null, 'ms' => $metaMs, 'source' => $tmdb->hasTmdbKey() ? 'TMDB' : 'Cinemeta (Free)'],
-                'opensub_free'  => ['ok' => count($osItems) > 0, 'count' => count($osItems)],
-                'podnapisi'     => ['ok' => count($podItems) > 0, 'count' => count($podItems)],
-                'yify'          => ['ok' => count($yifyItems) > 0, 'count' => count($yifyItems)],
-                'subf2m'        => ['ok' => count($s2mItems) > 0, 'count' => count($s2mItems)],
-                'subzone'       => ['ok' => count($szItems) > 0, 'count' => count($szItems)],
-                'subkade'       => ['ok' => count($skItems) > 0, 'count' => count($skItems)],
+                'metadata' => ['ok' => $metaItem !== null, 'ms' => $metaMs, 'source' => $tmdb->hasTmdbKey() ? 'TMDB' : 'Cinemeta (Free)'],
+                'storage'  => ['ok' => $storageOk, 'zips' => $zipCount],
+                'zip_ext'  => ['ok' => $zipOk],
+                'archive'  => ['ok' => true, 'total' => $stats['total'], 'persian' => $stats['persian'], 'titles' => $stats['titles']],
             ]);
         } catch (\Throwable $e) {
-            error_log('[test-apis] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            error_log('[test-apis] ' . $e->getMessage());
             http_response_code(500);
             echo json_encode(['error' => 'exception', 'message' => $e->getMessage()]);
         }
     }
 
-
+    /**
+     * Queues a specific IMDb ID into `sh_missing_subtitles` with high priority
+     * so `subieto_auto_sync.py` downloads & uploads it on the next run.
+     */
     public function syncImdbNow(): void
     {
         $this->requireAdmin();
@@ -397,20 +381,113 @@ final class AdminController extends BaseController
 
         $imdbId = strtolower(trim((string) ($_POST['imdb_id'] ?? '')));
         if (!preg_match('/^tt\d{5,10}$/', $imdbId)) {
-            Session::flash('error', 'لطفاً یک کد IMDb معتبر وارد کنید (مثال: tt1375666).');
+            Session::flash('error', 'لطفاً یک کد IMDb معتبر وارد کنید (مثال: tt31510819).');
             $this->redirect('/admin');
         }
 
-        @set_time_limit(90);
-        $repo = new SubtitleRepository($this->db, $this->prefix, $this->basePath . '/storage');
-        $res = $repo->syncSingleTitle($imdbId, $this->http, $this->settings, $this->cache);
-        $this->pageCache?->clearAll();
-
-        if ($res['title'] === '') {
+        $tmdb = new TmdbMetadataProvider($this->http, $this->settings, $this->cache);
+        $media = $tmdb->findByImdbId($imdbId);
+        if ($media === null) {
             Session::flash('error', "عنوانی با شناسه {$imdbId} یافت نشد.");
-        } else {
-            Session::flash('success', "عنوان «{$res['title']}» با موفقیت در آرشیو دائمی ذخیره شد ({$res['fetched']} زیرنویس کل / {$res['persian']} فارسی).");
+            $this->redirect('/admin');
         }
+
+        $this->metrics->indexMediaForSeo($media);
+        $this->metrics->recordMissingPersianSubtitle($media);
+
+        Session::flash('success', "عنوان «{$media->title}» ({$imdbId}) به صف دانلود اختصاصی (subieto_auto_sync.py) اضافه شد.");
+        $this->redirect('/admin');
+    }
+
+    public function bulkSeed(): void
+    {
+        $this->requireAdmin();
+
+        if (!Session::verifyCsrf($_POST['_csrf'] ?? null)) {
+            Session::flash('error', 'Invalid security token.');
+            $this->redirect('/admin');
+        }
+
+        @set_time_limit(60);
+        $tmdb = new TmdbMetadataProvider($this->http, $this->settings, $this->cache);
+        $added = 0;
+
+        // 1. Optional custom IMDb IDs pasted by admin
+        $customRaw = trim((string) ($_POST['custom_imdb_ids'] ?? ''));
+        if ($customRaw !== '') {
+            preg_match_all('/tt\d{5,10}/i', $customRaw, $matches);
+            $ids = array_slice(array_values(array_unique(array_map('strtolower', $matches[0] ?? []))), 0, 50);
+            foreach ($ids as $imdbId) {
+                $media = $tmdb->findByImdbId($imdbId);
+                if ($media !== null) {
+                    $this->metrics->indexMediaForSeo($media);
+                    $added++;
+                }
+            }
+        }
+
+        // 2. Deep paginated auto-seed (skip=0..400 across 4 catalogs -> 1,500+ top movies & series in parallel)
+        if (isset($_POST['seed_catalog']) || $customRaw === '') {
+            $catalogUrls = [];
+            $baseCats = [
+                'movie_top'    => 'https://v3-cinemeta.strem.io/catalog/movie/top',
+                'movie_rating' => 'https://v3-cinemeta.strem.io/catalog/movie/imdbRating',
+                'tv_top'       => 'https://v3-cinemeta.strem.io/catalog/series/top',
+                'tv_rating'    => 'https://v3-cinemeta.strem.io/catalog/series/imdbRating',
+            ];
+            foreach ($baseCats as $k => $base) {
+                foreach ([0, 100, 200, 300, 400] as $skip) {
+                    $catalogUrls["{$k}_{$skip}"] = $skip === 0 ? "{$base}.json" : "{$base}/skip={$skip}.json";
+                }
+            }
+            $responses = $this->http->getJsonBatch($catalogUrls, 12);
+            $seen = [];
+
+            foreach ($responses as $key => $data) {
+                $mType = str_starts_with((string) $key, 'tv_') ? 'tv' : 'movie';
+                foreach ($data['metas'] ?? [] as $meta) {
+                    if (!is_array($meta)) {
+                        continue;
+                    }
+                    $imdbId = strtolower(trim((string) ($meta['imdb_id'] ?? $meta['id'] ?? '')));
+                    if (!preg_match('/^tt\d{5,10}$/', $imdbId) || isset($seen[$imdbId])) {
+                        continue;
+                    }
+                    $seen[$imdbId] = true;
+
+                    $title = trim((string) ($meta['name'] ?? ''));
+                    if ($title === '') {
+                        continue;
+                    }
+                    $yearRaw = (string) ($meta['releaseInfo'] ?? $meta['year'] ?? '');
+                    $year = preg_match('/\b(19\d{2}|20\d{2})\b/', $yearRaw, $ym) ? $ym[1] : '';
+                    $poster = trim((string) ($meta['poster'] ?? ''));
+                    if ($poster === '') {
+                        $poster = 'https://live.metahub.space/poster/medium/' . $imdbId . '/img';
+                    }
+                    $slug = strtolower(trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($title)) ?? 'title', '-')) ?: 'title';
+
+                    $item = new \App\DTOs\MediaItem(
+                        tmdbId: 0,
+                        imdbId: $imdbId,
+                        title: $title,
+                        originalTitle: $title,
+                        mediaType: $mType,
+                        year: $year,
+                        posterUrl: $poster,
+                        backdropUrl: '',
+                        overview: '',
+                        voteAverage: round((float) ($meta['imdbRating'] ?? 0.0), 1),
+                        voteCount: 100,
+                        slug: $slug
+                    );
+                    $this->metrics->indexMediaForSeo($item);
+                    $added++;
+                }
+            }
+        }
+
+        Session::flash('success', "تعداد {$added} فیلم و سریال برتر با موفقیت به صف دیتابیس (sh_indexed_media) اضافه شد. کران‌جاب به‌صورت خودکار زیرنویس آن‌ها را تکمیل می‌کند.");
         $this->redirect('/admin');
     }
 

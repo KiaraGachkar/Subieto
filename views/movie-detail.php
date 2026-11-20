@@ -301,8 +301,24 @@ $hueColor = static function (string $code): string {
     <!-- Subtitle List (Clean: Release Name + Language + Quality + Translator, NO external source clutter) -->
     <div class="subs" id="subs">
         <?php if (empty($subtitles)): ?>
-            <div style="padding:48px 16px;text-align:center;color:var(--muted)">
-                <?= $isFa ? 'هنوز زیرنویسی برای این عنوان یافت نشد.' : 'No subtitles found for this title yet.' ?>
+            <div style="padding:48px 20px;text-align:center;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:14px">
+                <div style="font-size:15px;font-weight:700;color:var(--ink)">
+                    <?= $isFa ? 'زیرنویس این عنوان هنوز به آرشیو اضافه نشده است.' : 'Subtitles for this title have not been archived yet.' ?>
+                </div>
+                <div style="font-size:13px;max-width:420px;line-height:1.7">
+                    <?= $isFa ? 'با کلیک روی دکمه زیر، این عنوان در اولویت صف دانلود آرشیو قرار می‌گیرد و به‌زودی با کیفیت تمیز اضافه می‌شود.' : 'Click below to prioritize this title in our archive queue so verified UTF-8 subtitles are added soon.' ?>
+                </div>
+                <button
+                    type="button"
+                    @click="requestSubtitle()"
+                    :disabled="requesting || requested"
+                    style="padding:10px 22px;border-radius:999px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:var(--accent,#2e6f40);color:#fff;opacity:1;transition:opacity .2s"
+                    :style="requested ? 'background:#16a34a;cursor:default' : (requesting ? 'opacity:.65;cursor:wait' : '')"
+                >
+                    <span x-show="!requested && !requesting"><?= $isFa ? 'درخواست زیرنویس این عنوان' : 'Request Subtitle' ?></span>
+                    <span x-show="requesting" x-cloak><?= $isFa ? 'در حال ثبت درخواست...' : 'Submitting...' ?></span>
+                    <span x-show="requested" x-cloak><?= $isFa ? 'درخواست شما ثبت شد ✓' : 'Request Queued ✓' ?></span>
+                </button>
             </div>
         <?php else: ?>
             <?php foreach ($subtitles as $idx => $sub): ?>
@@ -480,6 +496,8 @@ $hueColor = static function (string $code): string {
             downloaded: {},
             voted: JSON.parse(localStorage.getItem('sb_votes_v1') || '{}'),
             voteCounts: {},
+            requesting: false,
+            requested: !!JSON.parse(localStorage.getItem('sb_reqs_v1') || '{}')[<?= json_encode($media->imdbId) ?>],
             toastVisible: false,
             toastMessage: '',
             init() {
@@ -568,6 +586,28 @@ $hueColor = static function (string $code): string {
                 this.downloaded[key] = true;
                 this.triggerToast(name);
                 setTimeout(() => { this.downloaded[key] = false; }, 2400);
+            },
+            async requestSubtitle() {
+                if (this.requesting || this.requested) return;
+                this.requesting = true;
+                try {
+                    const res = await fetch('/api/request-subtitle', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ imdb: <?= json_encode($media->imdbId) ?> })
+                    });
+                    const data = await res.json();
+                    if (data && data.ok) {
+                        this.requested = true;
+                        const map = JSON.parse(localStorage.getItem('sb_reqs_v1') || '{}');
+                        map[<?= json_encode($media->imdbId) ?>] = Date.now();
+                        localStorage.setItem('sb_reqs_v1', JSON.stringify(map));
+                        this.toastMessage = <?= json_encode($isFa ? 'درخواست زیرنویس ثبت شد ✓' : 'Subtitle request queued ✓') ?>;
+                        this.toastVisible = true;
+                        setTimeout(() => { this.toastVisible = false; }, 3200);
+                    }
+                } catch (e) {}
+                this.requesting = false;
             },
             triggerToast(name) {
                 this.toastMessage = '<?= $isFa ? 'ذخیره شد · ' : 'Saved · ' ?>' + name;

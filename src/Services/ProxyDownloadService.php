@@ -4,267 +4,100 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Core\HttpClient;
 use App\Core\SettingsManager;
-use App\Providers\OpenSubtitlesProvider;
-use App\Providers\Subf2mProvider;
-use App\Providers\SubzoneProvider;
-use App\Providers\SubkadeProvider;
 use PDO;
 use Throwable;
 use ZipArchive;
 
 defined('APP_SECURE_BOOT') or exit;
 
+/**
+ * Serves verified UTF-8 `.srt` subtitles directly from local per-title ZIP archives
+ * stored in `storage/subtitles/{imdb_id}.zip` with zero external HTTP calls.
+ */
 final class ProxyDownloadService
 {
-    private const ZIP_MAX_ENTRIES     = 250;
-    private const ZIP_MAX_ENTRY_BYTES = 15728640; // 15 MB per subtitle entry
-    private const ZIP_MAX_TOTAL_BYTES = 62914560; // 60 MB total uncompressed
-
     public function __construct(
-        private readonly HttpClient $http,
         private readonly SettingsManager $settings,
-        private readonly OpenSubtitlesProvider $openSubtitlesProvider,
         private readonly PDO $pdo,
         private readonly string $prefix = 'sh_'
     ) {
     }
-
 
     /**
      * @param array{imdbId?: string, title?: string, provider?: string, lang?: string} $meta
      */
     public function deliver(string $rawUrl, string $desiredFileName, array $meta = []): void
     {
-        $detailReferer = null;
-        if (str_starts_with($rawUrl, 'subzone://')) {
-            $detailReferer = substr($rawUrl, strlen('subzone://'));
-        } elseif (str_starts_with($rawUrl, 'subf2m://')) {
-            $detailReferer = substr($rawUrl, strlen('subf2m://'));
-        } elseif (str_starts_with($rawUrl, 'subkade://')) {
-            $detailReferer = substr($rawUrl, strlen('subkade://'));
-        }
-
-        $resolvedUrl = $this->resolveTargetUrl($rawUrl);
-        $pinnedIp = null;
-        if ($resolvedUrl === null || !$this->isAllowedDomain($resolvedUrl, $pinnedIp)) {
-            http_response_code(400);
-            echo 'لینک دانلود نامعتبر است یا منقضی شده است.';
-            return;
-        }
-
-        $cleanFileName = $this->brandFileName($this->sanitizeFileName($desiredFileName));
-
-        $browserHeaders = [
-            'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-            'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language' => 'en-US,en;q=0.9',
-        ];
-        $sourceHost = (string) parse_url($resolvedUrl, PHP_URL_HOST);
-        if ($detailReferer !== null && $detailReferer !== '') {
-            $browserHeaders['Referer'] = $detailReferer;
-        } elseif ($sourceHost !== '') {
-            $browserHeaders['Referer'] = 'https://' . $sourceHost . '/';
-        }
-
-        $response = $this->fetchPinnedHttps($resolvedUrl, 25, $pinnedIp, $browserHeaders);
-
-        // Follow up to 2 redirect hops (e.g. subzone.ir/subtitles/.../download -> media.sub-api.ir/...)
-        for ($hop = 0; $hop < 2 && $response['status'] >= 300 && $response['status'] < 400 && !empty($response['headers']['location']); $hop++) {
-            $prevUrl = $redirTarget ?? $resolvedUrl;
-            $redirTarget = HttpClient::absolutize($prevUrl, (string) $response['headers']['location']);
-            $redirIp = null;
-            if (!$this->isAllowedDomain($redirTarget, $redirIp)) {
-                break;
-            }
-            $redirHeaders = $browserHeaders;
-            $prevHost = (string) parse_url($prevUrl, PHP_URL_HOST);
-            if ($prevHost !== '') {
-                $redirHeaders['Referer'] = 'https://' . $prevHost . '/';
-            }
-            if (!empty($response['headers']['set-cookie'])) {
-                $cookiePair = explode(';', (string) $response['headers']['set-cookie'], 2)[0];
-                if ($cookiePair !== '') {
-                    $redirHeaders['Cookie'] = $cookiePair;
-                }
-            }
-            $response = $this->fetchPinnedHttps($redirTarget, 25, $redirIp, $redirHeaders);
-        }
-
-        if ($response['status'] < 200 || $response['status'] >= 300 || $response['body'] === '') {
-            if (in_array($response['status'], [404, 410], true)) {
-                $repo = new SubtitleRepository($this->pdo, $this->prefix, dirname(__DIR__, 2) . '/storage');
-                $repo->deactivateUrl($rawUrl);
-            }
-            error_log('[proxy-download] Fetch failed for ' . $sourceHost . ' (status ' . $response['status'] . ')');
-            http_response_code(502);
+        if (!str_starts_with($rawUrl, 'localzip://')) {
+            http_response_code(410);
             header('Content-Type: text/plain; charset=utf-8');
-            echo 'Could not fetch the subtitle from the source. Please try a different release or language.';
+            echo 'این لینک قدیمی دیگر پشتیبانی نمی‌شود. لطفاً از فایل‌های آرشیو مستقیم سایت استفاده کنید.';
             return;
         }
 
-        $content = $response['body'];
-        $isZip = str_starts_with($content, "PK\x03\x04") || str_ends_with(strtolower($cleanFileName), '.zip');
-
-        header('X-Content-Type-Options: nosniff');
-        header('X-Robots-Tag: noindex, nofollow');
-
-        if ($isZip) {
-            if (!str_ends_with(strtolower($cleanFileName), '.zip')) {
-                $cleanFileName .= '.zip';
-            }
-            $zipResult = $this->processZipArchive($content);
-            if ($zipResult === null) {
-                error_log('[proxy-download] Rejected oversized ZIP archive: ' . $cleanFileName);
-                http_response_code(422);
-                echo 'فایل آرشیو زیرنویس بیش از حد مجاز حجیم است و قابل پردازش نیست.';
-                return;
-            }
-            if ($zipResult['singleSub'] !== null) {
-                $content       = $zipResult['singleSub']['content'];
-                $cleanFileName = $this->brandFileName($this->sanitizeFileName($zipResult['singleSub']['fileName']));
-                header('Content-Type: application/x-subrip; charset=utf-8');
-            } else {
-                $content = $zipResult['zipBinary'];
-                header('Content-Type: application/zip');
-            }
-        } else {
-            $content = $this->normalizeToUtf8($content);
-            header('Content-Type: application/x-subrip; charset=utf-8');
+        $spec = substr($rawUrl, strlen('localzip://'));
+        $parts = explode('#', $spec, 2);
+        if (count($parts) !== 2) {
+            http_response_code(400);
+            echo 'لینک فایل محلی نامعتبر است.';
+            return;
         }
 
+        [$zipFile, $entryName] = $parts;
+        if (
+            !preg_match('/^tt\d{5,10}\.zip$/i', $zipFile)
+            || $entryName === ''
+            || str_contains($entryName, '..')
+            || str_starts_with($entryName, '/')
+            || str_contains($entryName, '\\')
+        ) {
+            http_response_code(400);
+            echo 'مسیر فایل زیرنویس نامعتبر است.';
+            return;
+        }
+
+        $zipFullPath = dirname(__DIR__, 2) . '/storage/subtitles/' . strtolower($zipFile);
+        if (!is_file($zipFullPath) || !class_exists(ZipArchive::class)) {
+            http_response_code(404);
+            echo 'فایل آرشیو زیرنویس روی سرور یافت نشد.';
+            return;
+        }
+
+        $zip = new ZipArchive();
+        if ($zip->open($zipFullPath) !== true) {
+            http_response_code(500);
+            echo 'خطا در باز کردن فایل آرشیو زیرنویس.';
+            return;
+        }
+
+        $content = $zip->getFromName($entryName);
+        $zip->close();
+
+        if (!is_string($content) || $content === '') {
+            http_response_code(404);
+            echo 'فایل زیرنویس مورد نظر داخل آرشیو یافت نشد.';
+            return;
+        }
+
+        $cleanFileName = $this->brandFileName(
+            $this->sanitizeFileName($desiredFileName !== '' ? $desiredFileName : basename($entryName))
+        );
         $this->recordDownload($cleanFileName, $meta);
 
-        // Clear any active output buffers (e.g. ob_gzhandler) so Content-Length matches raw binary output
         while (ob_get_level() > 0) {
             @ob_end_clean();
         }
 
+        header('X-Content-Type-Options: nosniff');
+        header('X-Robots-Tag: noindex, nofollow');
+        header('Content-Type: application/x-subrip; charset=utf-8');
         header('Content-Disposition: attachment; filename="' . $cleanFileName . '"');
         header('Content-Length: ' . strlen($content));
         header('Cache-Control: no-store, no-cache, must-revalidate');
 
         echo $content;
         exit;
-    }
-
-    private function zipWithinLimits(ZipArchive $zip): bool
-    {
-        if ($zip->numFiles > self::ZIP_MAX_ENTRIES) {
-            return false;
-        }
-
-        $totalUncompressed = 0;
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $stat = $zip->statIndex($i);
-            if (!is_array($stat)) {
-                return false;
-            }
-            $size = (int) ($stat['size'] ?? 0);
-            if ($size > self::ZIP_MAX_ENTRY_BYTES) {
-                return false;
-            }
-            $totalUncompressed += $size;
-            if ($totalUncompressed > self::ZIP_MAX_TOTAL_BYTES) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * @return array{zipBinary: string, singleSub: ?array{content: string, fileName: string}}|null
-     */
-    private function processZipArchive(string $zipBinary): ?array
-    {
-        $fallback = ['zipBinary' => $zipBinary, 'singleSub' => null];
-        if (!class_exists(ZipArchive::class)) {
-            return $fallback;
-        }
-
-        $tmpFile = tempnam(sys_get_temp_dir(), 'shzip_');
-        if ($tmpFile === false) {
-            return $fallback;
-        }
-
-        try {
-            if (file_put_contents($tmpFile, $zipBinary) === false) {
-                return $fallback;
-            }
-
-            $zip = new ZipArchive();
-            if ($zip->open($tmpFile) !== true) {
-                return $fallback;
-            }
-
-            if (!$this->zipWithinLimits($zip)) {
-                $zip->close();
-                return null;
-            }
-
-            $modified = false;
-            $textSubExtensions = ['srt', 'vtt', 'ass', 'ssa'];
-            $extractedSubs = [];
-
-            for ($i = 0; $i < $zip->numFiles; $i++) {
-                $entryName = $zip->getNameIndex($i);
-                if (!is_string($entryName) || str_ends_with($entryName, '/') || str_starts_with(basename($entryName), '._')) {
-                    continue;
-                }
-
-                $brandedEntry = $this->brandFileName($entryName);
-                if ($brandedEntry !== $entryName && $zip->renameIndex($i, $brandedEntry)) {
-                    $modified = true;
-                    $entryName = $brandedEntry;
-                }
-
-                $ext = strtolower(pathinfo($entryName, PATHINFO_EXTENSION));
-                if (!in_array($ext, $textSubExtensions, true)) {
-                    continue;
-                }
-
-                $rawEntry = $zip->getFromIndex($i);
-                if (!is_string($rawEntry) || $rawEntry === '') {
-                    continue;
-                }
-
-                $processed = $this->normalizeToUtf8($rawEntry);
-                $extractedSubs[] = [
-                    'content'  => $processed,
-                    'fileName' => basename($entryName),
-                ];
-
-                if ($processed !== $rawEntry) {
-                    $zip->addFromString($entryName, $processed);
-                    $modified = true;
-                }
-            }
-
-            $zip->close();
-
-            // Auto-extract if the archive contains exactly ONE subtitle file (great for mobile & smart TVs)
-            if (count($extractedSubs) === 1) {
-                return [
-                    'zipBinary' => $zipBinary,
-                    'singleSub' => $extractedSubs[0],
-                ];
-            }
-
-            if ($modified) {
-                $updated = file_get_contents($tmpFile);
-                if (is_string($updated) && $updated !== '') {
-                    return ['zipBinary' => $updated, 'singleSub' => null];
-                }
-            }
-
-            return $fallback;
-        } catch (Throwable) {
-            return $fallback;
-        } finally {
-            @unlink($tmpFile);
-        }
     }
 
     /**
@@ -292,172 +125,6 @@ final class ProxyDownloadService
         }
     }
 
-    private function resolveTargetUrl(string $rawUrl): ?string
-    {
-        if (str_starts_with($rawUrl, 'opensubtitles://file/')) {
-            $fileId = (int) substr($rawUrl, strlen('opensubtitles://file/'));
-            return $fileId > 0 ? $this->openSubtitlesProvider->resolveDownloadLink($fileId) : null;
-        }
-
-        if (str_starts_with($rawUrl, 'subf2m://')) {
-            $detailUrl = substr($rawUrl, strlen('subf2m://'));
-            if (str_starts_with($detailUrl, 'https://subf2m.co/')) {
-                $subf2m = new Subf2mProvider($this->http, $this->settings);
-                return $subf2m->resolveDownloadLink($detailUrl);
-            }
-            return null;
-        }
-
-        if (str_starts_with($rawUrl, 'subzone://')) {
-            $detailUrl = substr($rawUrl, strlen('subzone://'));
-            if (preg_match('#^https://(?:www\.)?subzone\.ir/#i', $detailUrl)) {
-                $subzone = new SubzoneProvider($this->http, $this->settings);
-                return $subzone->resolveDownloadLink($detailUrl);
-            }
-            return null;
-        }
-
-        if (str_starts_with($rawUrl, 'subkade://')) {
-            $detailUrl = substr($rawUrl, strlen('subkade://'));
-            if (preg_match('#^https://(?:www\.)?subkade\.ir/#i', $detailUrl)) {
-                $subkade = new SubkadeProvider($this->http, $this->settings);
-                return $subkade->resolveDownloadLink($detailUrl);
-            }
-            return null;
-        }
-
-        return filter_var($rawUrl, FILTER_VALIDATE_URL) ? $rawUrl : null;
-    }
-
-    private function isAllowedDomain(string $url, ?string &$pinnedIp = null): bool
-    {
-        $pinnedIp = null;
-        $parts = parse_url($url);
-        if (!is_array($parts)) {
-            return false;
-        }
-
-        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
-        if ($scheme !== 'https') {
-            return false;
-        }
-
-        if (isset($parts['port']) && (int) $parts['port'] !== 443) {
-            return false;
-        }
-
-        $host = strtolower((string) ($parts['host'] ?? ''));
-        if ($host === '') {
-            return false;
-        }
-
-        $matched = false;
-        foreach (['subdl.com', 'opensubtitles.com', 'opensubtitles.org', 'strem.io', 'yifysubtitles.ch', 'subf2m.co', 'podnapisi.net', 'subzone.ir', 'subkade.ir', 'sub-api.ir'] as $suffix) {
-            if ($host === $suffix || str_ends_with($host, '.' . $suffix)) {
-                $matched = true;
-                break;
-            }
-        }
-
-        if (!$matched) {
-            return false;
-        }
-
-        if (function_exists('dns_get_record')) {
-            $records = @dns_get_record($host, DNS_A + DNS_AAAA) ?: [];
-            if ($records === []) {
-                return false;
-            }
-            foreach ($records as $r) {
-                $ip = (string) ($r['ip'] ?? $r['ipv6'] ?? '');
-                if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                    return false;
-                }
-                // Reuse this resolution for CURLOPT_RESOLVE in fetchPinnedHttps
-                // instead of doing a second DNS lookup. Prefer an IPv4 address.
-                if ($pinnedIp === null && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                    $pinnedIp = $ip;
-                } elseif ($pinnedIp === null && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-                    $pinnedIp = '[' . $ip . ']';
-                }
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * @return array{status: int, body: string, headers: array<string, string>}
-     */
-    /**
-     * @param array<string, string> $headers
-     * @return array{status: int, body: string, headers: array<string, string>}
-     */
-    private function fetchPinnedHttps(string $url, int $timeout, ?string $pinnedIp = null, array $headers = []): array
-    {
-        $host  = (string) parse_url($url, PHP_URL_HOST);
-        $ip    = ($pinnedIp !== null && $pinnedIp !== '') ? $pinnedIp : ($host !== '' ? gethostbyname($host) : '');
-        $cleanIp = trim($ip, '[]');
-        $extra = ($cleanIp !== '' && $cleanIp !== $host && filter_var($cleanIp, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE))
-            ? [CURLOPT_RESOLVE => [$host . ':443:' . $ip]]
-            : [];
-        return $this->http->request('GET', $url, $headers, null, $timeout, false, $extra);
-    }
-
-    private function normalizeToUtf8(string $binary): string
-    {
-        if (str_starts_with($binary, "\xEF\xBB\xBF")) {
-            return $binary;
-        }
-
-        // UTF-16LE / UTF-16BE with BOM
-        if (str_starts_with($binary, "\xFF\xFE") && function_exists('iconv')) {
-            $utf8 = @iconv('UTF-16LE', 'UTF-8//IGNORE', substr($binary, 2));
-            if (is_string($utf8) && $utf8 !== '') {
-                return "\xEF\xBB\xBF" . $utf8;
-            }
-        } elseif (str_starts_with($binary, "\xFE\xFF") && function_exists('iconv')) {
-            $utf8 = @iconv('UTF-16BE', 'UTF-8//IGNORE', substr($binary, 2));
-            if (is_string($utf8) && $utf8 !== '') {
-                return "\xEF\xBB\xBF" . $utf8;
-            }
-        }
-
-        // BOM-less UTF-16LE / UTF-16BE detection (common in older Persian SRT files saved on Windows)
-        if (str_contains(substr($binary, 0, 200), "\x00") && function_exists('iconv')) {
-            $isBe = isset($binary[0]) && $binary[0] === "\x00";
-            $utf8 = @iconv($isBe ? 'UTF-16BE' : 'UTF-16LE', 'UTF-8//IGNORE', $binary);
-            if (is_string($utf8) && $utf8 !== '' && mb_check_encoding($utf8, 'UTF-8')) {
-                return "\xEF\xBB\xBF" . $utf8;
-            }
-        }
-
-        if (mb_check_encoding($binary, 'UTF-8')) {
-            return "\xEF\xBB\xBF" . $binary;
-        }
-
-        // Legacy Windows-1256 (CP1256) Persian/Arabic encoding -> UTF-8 with BOM (required by TVs & KMPlayer/PotPlayer)
-        if (function_exists('iconv')) {
-            try {
-                $converted = @iconv('WINDOWS-1256', 'UTF-8//IGNORE', $binary);
-                if (is_string($converted) && $converted !== '') {
-                    return "\xEF\xBB\xBF" . $converted;
-                }
-            } catch (Throwable) {
-                // Fall through
-            }
-        }
-
-        if (function_exists('mb_convert_encoding')) {
-            $converted = @mb_convert_encoding($binary, 'UTF-8', 'Windows-1256');
-            if (is_string($converted) && $converted !== '') {
-                return "\xEF\xBB\xBF" . $converted;
-            }
-        }
-
-        return "\xEF\xBB\xBF" . $binary;
-    }
-
     private function sanitizeFileName(string $name): string
     {
         $name = basename($name);
@@ -468,23 +135,18 @@ final class ProxyDownloadService
     private function brandFileName(string $name): string
     {
         $site = preg_replace('/[^a-zA-Z0-9_-]+/', '', (string) $this->settings->get('site.title', 'Subieto')) ?: 'Subieto';
-        
-        // Comprehensive regex to catch any other Persian/English subtitle site names or provider tags
         $foreignSites = 'subkade|subzone|subf2m|subdl|yifysubtitles|yify|yts|opensubtitles|podnapisi|addic7ed|tvsubtitles|tsubtitle|worldsub|animesub|farsisubtitle|subpars';
-        
-        // Remove bracketed or dotted/dashed references to other sites
         $name = preg_replace('/[\[\(\{][^\]\)\}]*(?:' . $foreignSites . ')[^\]\)\}]*[\]\)\}]/ui', '', $name) ?? $name;
         $name = preg_replace('/(?<![A-Za-z0-9])(?:' . $foreignSites . ')(?![A-Za-z0-9])/ui', '', $name) ?? $name;
-        
-        // Append site brand cleanly if not already present
+
         $pathInfo = pathinfo($name);
         $filename = $pathInfo['filename'] ?? 'subtitle';
         $ext = isset($pathInfo['extension']) ? '.' . $pathInfo['extension'] : '.srt';
-        
+
         if (!str_contains(strtolower($filename), strtolower($site))) {
             $filename = rtrim($filename, '._-') . '_' . $site;
         }
-        
+
         return preg_replace('/[._-]{2,}/', '_', $filename) . $ext;
     }
 }

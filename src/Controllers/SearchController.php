@@ -159,7 +159,7 @@ final class SearchController extends BaseController
         foreach ($list as $idx => $item) {
             if ($item->posterUrl === '' && preg_match('/^tt\d{5,10}$/', $item->imdbId)) {
                 $cType = $item->mediaType === 'tv' ? 'series' : 'movie';
-                $cachedMeta = $this->cache->get("cinemeta_imdb_{$item->imdbId}");
+                $cachedMeta = $this->cache->get("cinemeta_imdb_v2_{$item->imdbId}");
                 if (is_array($cachedMeta) && !empty($cachedMeta['posterUrl'])) {
                     $item->posterUrl = (string) $cachedMeta['posterUrl'];
                 } elseif (count($missingPosters) < 12) {

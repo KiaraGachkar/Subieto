@@ -157,6 +157,8 @@ final class ReleaseParser
         if ($stripSeason) {
             $normCand = self::stripSeasonSuffix($normCand);
         }
+        // Strip trailing 4-digit year from slugs/titles (e.g. "from 2022" -> "from")
+        $normCand = trim((string) (preg_replace('/\s+(?:19|20)\d{2}$/', '', $normCand) ?? $normCand));
         if ($normCand === '') {
             return 0;
         }

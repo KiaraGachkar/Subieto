@@ -105,7 +105,7 @@ final class HomeController extends BaseController
                 if (is_array($meta) && (string) ($meta['title'] ?? '') !== '') {
                     $seenTop[$id] = true;
                     $posterUrl = '';
-                    $cMeta = $this->cache->get("cinemeta_imdb_{$id}");
+                    $cMeta = $this->cache->get("cinemeta_imdb_v2_{$id}");
                     if (is_array($cMeta) && !empty($cMeta['posterUrl'])) {
                         $posterUrl = (string) $cMeta['posterUrl'];
                     } else {
